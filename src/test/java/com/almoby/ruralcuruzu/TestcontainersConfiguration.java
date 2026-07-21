@@ -1,4 +1,4 @@
-package com.ruralcuruzu.rural_curuzu;
+package com.almoby.ruralcuruzu;
 
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;

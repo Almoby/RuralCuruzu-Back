@@ -1,4 +1,4 @@
-package com.ruralcuruzu.rural_curuzu;
+package com.almoby.ruralcuruzu;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;

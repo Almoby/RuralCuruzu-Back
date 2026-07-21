@@ -1,4 +1,4 @@
-package com.ruralcuruzu.rural_curuzu;
+package com.almoby.ruralcuruzu;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
