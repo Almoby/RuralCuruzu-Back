@@ -31,7 +31,7 @@ public class SmtpEmailService implements EmailService {
     public SmtpEmailService(
             JavaMailSender mailSender,
             @Value("${spring.mail.username}") String remitente,
-            @Value("${app.frontend.reset-password-url:http://localhost:4200/restablecer-password}") String urlBaseRestablecer) {
+            @Value("${app.frontend.reset-password-url:http://localhost:4200/reset-password}") String urlBaseRestablecer) {
         this.mailSender = mailSender;
         this.remitente = remitente;
         this.urlBaseRestablecer = urlBaseRestablecer;
@@ -43,7 +43,9 @@ public class SmtpEmailService implements EmailService {
 
         try {
             MimeMessage mensaje = mailSender.createMimeMessage();
-            MimeMessageHelper helper = new MimeMessageHelper(mensaje, "UTF-8");
+            // El segundo parámetro (true) marca el mensaje como "multipart":
+            // hace falta para poder mandar texto plano + HTML como alternativas.
+            MimeMessageHelper helper = new MimeMessageHelper(mensaje, true, "UTF-8");
 
             helper.setFrom(remitente);
             helper.setTo(destinatario);
@@ -59,6 +61,28 @@ public class SmtpEmailService implements EmailService {
             // y lo loguea completo para poder diagnosticarlo.
             log.error("Error enviando correo de recuperación a email={}", destinatario, ex);
             throw new IllegalStateException("No se pudo enviar el correo de recuperación", ex);
+        }
+    }
+
+    @Override
+    public void enviarCorreoPasswordCambiada(String destinatario, String nombre) {
+        try {
+            MimeMessage mensaje = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(mensaje, true, "UTF-8");
+
+            helper.setFrom(remitente);
+            helper.setTo(destinatario);
+            helper.setSubject("Tu contraseña fue actualizada - Rural Curuzú");
+            helper.setText(cuerpoTextoPlanoConfirmacion(nombre), cuerpoHtmlConfirmacion(nombre));
+
+            mailSender.send(mensaje);
+            log.info("Correo de confirmación de cambio de contraseña enviado a email={}", destinatario);
+        } catch (MessagingException | MailException ex) {
+            // A diferencia del correo de recuperación, acá la contraseña YA se
+            // cambió con éxito en la base: que falle este aviso no debe romper
+            // la respuesta del reset-password. Se loguea como error para
+            // poder detectarlo, pero no se relanza.
+            log.error("Error enviando correo de confirmación de cambio de contraseña a email={}", destinatario, ex);
         }
     }
 
@@ -81,5 +105,22 @@ public class SmtpEmailService implements EmailService {
                 <p><a href="%s">Hacé clic acá para elegir una nueva contraseña</a> (el enlace vence en poco tiempo).</p>
                 <p>Si no fuiste vos quien lo solicitó, podés ignorar este mensaje.</p>
                 """.formatted(nombre, enlace);
+    }
+
+    private String cuerpoTextoPlanoConfirmacion(String nombre) {
+        return """
+                Hola %s,
+
+                Te confirmamos que tu contraseña de Rural Curuzú se actualizó con éxito.
+                Si no fuiste vos quien hizo este cambio, contactá al administrador de inmediato.
+                """.formatted(nombre);
+    }
+
+    private String cuerpoHtmlConfirmacion(String nombre) {
+        return """
+                <p>Hola %s,</p>
+                <p>Te confirmamos que tu contraseña de <strong>Rural Curuzú</strong> se actualizó con éxito.</p>
+                <p>Si no fuiste vos quien hizo este cambio, contactá al administrador de inmediato.</p>
+                """.formatted(nombre);
     }
 }

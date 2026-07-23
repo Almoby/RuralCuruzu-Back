@@ -16,10 +16,26 @@ public interface AuthService {
     LoginResponse login(LoginRequest request);
 
     /**
-     * Revoca el token actual: a partir de este momento ya no sirve para autenticar,
-     * aunque su firma y fecha de expiración sigan siendo válidas.
+     * Revoca el access token actual y, si se manda uno, también el refresh token
+     * (a partir de este momento ninguno de los dos sirve para autenticar).
+     *
+     * @param refreshToken puede ser null: es opcional que el cliente lo mande.
      */
-    void logout(String token);
+    void logout(String token, String refreshToken);
+
+    /**
+     * Renueva el access token sin pedirle al usuario que vuelva a loguearse,
+     * a partir de un refresh token válido. El refresh token usado queda
+     * revocado y se emite uno nuevo (rotación).
+     *
+     * @throws com.almoby.ruralcuruzu.exception.RefreshTokenInvalidoException si no existe,
+     *         ya fue usado, o el usuario dueño ya no existe.
+     * @throws com.almoby.ruralcuruzu.exception.RefreshTokenExpiradoException si existe
+     *         pero venció.
+     * @throws com.almoby.ruralcuruzu.exception.UsuarioInactivoException si el usuario
+     *         ya no está activo.
+     */
+    LoginResponse refrescarToken(String refreshToken);
 
     /**
      * Inicia el flujo de recuperación de contraseña: si el email existe, genera

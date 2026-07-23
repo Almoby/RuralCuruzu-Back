@@ -17,4 +17,11 @@ public interface EmailService {
      * @param tokenPlano   token en texto plano (sin hashear) que va en el link
      */
     void enviarCorreoRecuperacionPassword(String destinatario, String nombre, String tokenPlano);
+
+    /**
+     * Notifica que la contraseña se cambió con éxito (vía reset-password).
+     * Es un aviso de seguridad: si alguien restablece la contraseña sin ser
+     * el dueño real de la cuenta, el dueño se entera igual por este correo.
+     */
+    void enviarCorreoPasswordCambiada(String destinatario, String nombre);
 }

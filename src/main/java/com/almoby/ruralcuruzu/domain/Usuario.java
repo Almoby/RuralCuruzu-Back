@@ -66,7 +66,28 @@ public class Usuario {
     @Field("fecha_creacion")
     private Instant fechaCreacion;
 
+    /**
+     * Contraseñas incorrectas consecutivas. Se resetea a 0 en cada login exitoso.
+     * Al llegar al umbral (ver AuthServiceImpl) se fija {@link #bloqueadoHasta}
+     * y este contador vuelve a 0.
+     */
+    @Field("intentos_fallidos")
+    @Builder.Default
+    private int intentosFallidos = 0;
+
+    /**
+     * Si no es null y está en el futuro, la cuenta está bloqueada temporalmente
+     * por demasiadas contraseñas incorrectas seguidas (independiente del campo
+     * {@link #estado}, que es para bloqueos manuales del admin).
+     */
+    @Field("bloqueado_hasta")
+    private Instant bloqueadoHasta;
+
     public boolean estaActivo() {
         return estado == EstadoUsuario.ACTIVO;
+    }
+
+    public boolean estaBloqueadoTemporalmente() {
+        return bloqueadoHasta != null && bloqueadoHasta.isAfter(Instant.now());
     }
 }

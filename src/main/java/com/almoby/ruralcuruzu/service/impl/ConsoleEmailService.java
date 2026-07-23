@@ -23,7 +23,7 @@ public class ConsoleEmailService implements EmailService {
     private final String urlBaseRestablecer;
 
     public ConsoleEmailService(
-            @Value("${app.frontend.reset-password-url:http://localhost:4200/restablecer-password}") String urlBaseRestablecer) {
+            @Value("${app.frontend.reset-password-url:http://localhost:4200/reset-password}") String urlBaseRestablecer) {
         this.urlBaseRestablecer = urlBaseRestablecer;
     }
 
@@ -41,5 +41,18 @@ public class ConsoleEmailService implements EmailService {
                 Si no fuiste vos, ignorá este mensaje.
                 ============================================================""",
                 destinatario, nombre, enlace);
+    }
+
+    @Override
+    public void enviarCorreoPasswordCambiada(String destinatario, String nombre) {
+        log.info("""
+                ==================== EMAIL (simulado) ====================
+                Para: {}
+                Asunto: Tu contraseña fue actualizada - Rural Curuzú
+                Hola {},
+                Te confirmamos que tu contraseña se cambió con éxito.
+                Si no fuiste vos, contactá al administrador de inmediato.
+                ============================================================""",
+                destinatario, nombre);
     }
 }

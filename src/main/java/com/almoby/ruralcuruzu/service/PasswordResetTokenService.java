@@ -51,6 +51,12 @@ public class PasswordResetTokenService {
      * (el único momento en que existe: no queda persistido en ningún lado).
      */
     public String generar(String usuarioId) {
+        long invalidados = repository.deleteByUsuarioIdAndUsadoFalse(usuarioId);
+        if (invalidados > 0) {
+            log.info("Se invalidaron {} token(s) de recuperación anteriores sin usar, usuarioId={}",
+                    invalidados, usuarioId);
+        }
+
         byte[] bytesAleatorios = new byte[BYTES_DE_ENTROPIA];
         generadorAleatorio.nextBytes(bytesAleatorios);
         String tokenPlano = Base64.getUrlEncoder().withoutPadding().encodeToString(bytesAleatorios);

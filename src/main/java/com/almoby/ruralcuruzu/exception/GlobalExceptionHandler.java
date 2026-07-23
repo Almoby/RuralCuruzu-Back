@@ -49,6 +49,20 @@ public class GlobalExceptionHandler {
         return responder(HttpStatus.FORBIDDEN, ex.getMessage(), request);
     }
 
+    @ExceptionHandler(CuentaBloqueadaTemporalmenteException.class)
+    public ResponseEntity<ApiErrorResponse> handleCuentaBloqueada(CuentaBloqueadaTemporalmenteException ex,
+                                                                    HttpServletRequest request) {
+        log.warn("Login rechazado [{}]: {}", request.getRequestURI(), ex.getMessage());
+        return responder(HttpStatus.LOCKED, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(DemasiadasSolicitudesException.class)
+    public ResponseEntity<ApiErrorResponse> handleDemasiadasSolicitudes(DemasiadasSolicitudesException ex,
+                                                                          HttpServletRequest request) {
+        log.warn("Rate limit excedido [{}]: {}", request.getRequestURI(), ex.getMessage());
+        return responder(HttpStatus.TOO_MANY_REQUESTS, ex.getMessage(), request);
+    }
+
     @ExceptionHandler(TokenRecuperacionInvalidoException.class)
     public ResponseEntity<ApiErrorResponse> handleTokenRecuperacionInvalido(TokenRecuperacionInvalidoException ex,
                                                                              HttpServletRequest request) {
@@ -68,6 +82,20 @@ public class GlobalExceptionHandler {
                                                                   HttpServletRequest request) {
         log.warn("Restablecimiento de contraseña rechazado [{}]: {}", request.getRequestURI(), ex.getMessage());
         return responder(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(RefreshTokenInvalidoException.class)
+    public ResponseEntity<ApiErrorResponse> handleRefreshTokenInvalido(RefreshTokenInvalidoException ex,
+                                                                         HttpServletRequest request) {
+        log.warn("Refresh rechazado [{}]: {}", request.getRequestURI(), ex.getMessage());
+        return responder(HttpStatus.UNAUTHORIZED, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(RefreshTokenExpiradoException.class)
+    public ResponseEntity<ApiErrorResponse> handleRefreshTokenExpirado(RefreshTokenExpiradoException ex,
+                                                                         HttpServletRequest request) {
+        log.warn("Refresh rechazado [{}]: {}", request.getRequestURI(), ex.getMessage());
+        return responder(HttpStatus.UNAUTHORIZED, ex.getMessage(), request);
     }
 
     @ExceptionHandler(AccessDeniedException.class)

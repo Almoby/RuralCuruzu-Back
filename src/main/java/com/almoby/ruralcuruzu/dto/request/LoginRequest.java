@@ -1,5 +1,6 @@
 package com.almoby.ruralcuruzu.dto.request;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 
@@ -10,10 +11,12 @@ import jakarta.validation.constraints.NotBlank;
  */
 public record LoginRequest(
 
+        @Schema(description = "Email de la cuenta", example = "socio@ruralcuruzu.com")
         @NotBlank(message = "El email es obligatorio")
         @Email(message = "El email no tiene un formato válido")
         String email,
 
+        @Schema(description = "Contraseña de la cuenta", example = "MiPassword123!")
         @NotBlank(message = "La contraseña es obligatoria")
         String password
 
