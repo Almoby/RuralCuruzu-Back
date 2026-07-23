@@ -24,4 +24,16 @@ public interface EmailService {
      * el dueño real de la cuenta, el dueño se entera igual por este correo.
      */
     void enviarCorreoPasswordCambiada(String destinatario, String nombre);
+
+    /**
+     * Confirma al solicitante que su solicitud de socio fue recibida
+     * (documento 5.4: "se envía una confirmación por correo").
+     */
+    void enviarCorreoConfirmacionSolicitudSocio(String destinatario, String nombre, String numeroSolicitud);
+
+    /**
+     * Avisa al solicitante que su solicitud fue rechazada, con el motivo
+     * (documento, sección de Rechazo: "se envía un correo al solicitante").
+     */
+    void enviarCorreoRechazoSolicitudSocio(String destinatario, String nombre, String numeroSolicitud, String motivo);
 }

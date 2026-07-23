@@ -1,4 +1,4 @@
-package com.almoby.ruralcuruzu.domain;
+package com.almoby.ruralcuruzu.enums;
 
 /**
  * Roles de usuario soportados por la plataforma.

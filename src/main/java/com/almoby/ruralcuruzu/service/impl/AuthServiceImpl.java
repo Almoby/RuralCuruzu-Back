@@ -4,6 +4,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
+import com.almoby.ruralcuruzu.constantes.ClavesRateLimiter;
 import com.almoby.ruralcuruzu.domain.Usuario;
 import com.almoby.ruralcuruzu.dto.request.LoginRequest;
 import com.almoby.ruralcuruzu.dto.response.LoginResponse;
@@ -29,8 +30,6 @@ import java.time.Instant;
 @Slf4j
 @Service
 public class AuthServiceImpl implements AuthService {
-
-    private static final String PREFIJO_CLAVE_FORGOT_PASSWORD = "forgot-password:";
 
     private final UsuarioRepository usuarioRepository;
     private final PasswordEncoder passwordEncoder;
@@ -187,7 +186,7 @@ public class AuthServiceImpl implements AuthService {
         String emailNormalizado = normalizarEmail(email);
 
         boolean permitido = rateLimiterService.permitirIntento(
-                PREFIJO_CLAVE_FORGOT_PASSWORD + emailNormalizado, maxSolicitudesRecuperacionPorHora, Duration.ofHours(1));
+                ClavesRateLimiter.PREFIJO_FORGOT_PASSWORD + emailNormalizado, maxSolicitudesRecuperacionPorHora, Duration.ofHours(1));
 
         if (!permitido) {
             // No se genera token ni se manda correo, pero la respuesta al cliente

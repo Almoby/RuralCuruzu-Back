@@ -12,7 +12,7 @@ import javax.crypto.SecretKey;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
-import com.almoby.ruralcuruzu.domain.Rol;
+import com.almoby.ruralcuruzu.enums.Rol;
 import com.almoby.ruralcuruzu.domain.Usuario;
 
 import io.jsonwebtoken.Claims;

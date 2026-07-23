@@ -1,6 +1,6 @@
 package com.almoby.ruralcuruzu.dto.response;
 
-import com.almoby.ruralcuruzu.domain.Rol;
+import com.almoby.ruralcuruzu.enums.Rol;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 

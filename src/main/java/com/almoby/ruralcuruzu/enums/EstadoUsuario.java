@@ -1,4 +1,4 @@
-package com.almoby.ruralcuruzu.domain;
+package com.almoby.ruralcuruzu.enums;
 
 /**
  * Estado de la cuenta de acceso (login) de un usuario.

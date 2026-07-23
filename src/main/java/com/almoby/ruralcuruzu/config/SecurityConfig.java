@@ -17,6 +17,7 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
+import com.almoby.ruralcuruzu.constantes.RutasApi;
 import com.almoby.ruralcuruzu.security.RestAccessDeniedHandler;
 import com.almoby.ruralcuruzu.security.RestAuthenticationEntryPoint;
 import com.almoby.ruralcuruzu.security.jwt.JwtAuthenticationFilter;
@@ -27,17 +28,18 @@ public class SecurityConfig {
 
     // OJO: rutas explícitas, no "/api/auth/**". /api/auth/logout debe
     // quedar protegido (requiere Bearer token) para poder revocarlo.
-    // Se irán agregando más rutas públicas (ej. alta de solicitud de socio,
-    // forgot-password, reset-password) a medida que se implementen esos módulos.
+    // Se irán agregando más rutas públicas a medida que se implementen esos módulos.
     private static final String[] RUTAS_PUBLICAS = {
-            "/api/auth/login",
-            "/api/auth/forgot-password",
-            "/api/auth/reset-password",
-            "/api/auth/refresh",
+            RutasApi.LOGIN,
+            RutasApi.FORGOT_PASSWORD,
+            RutasApi.RESET_PASSWORD,
+            RutasApi.REFRESH,
+            // Botón "Quiero ser socio": cualquier visitante puede enviar una solicitud.
+            RutasApi.SOLICITUDES_SOCIO,
             // Documentación Swagger/OpenAPI: pública para poder verla sin loguearse.
-            "/swagger-ui.html",
-            "/swagger-ui/**",
-            "/v3/api-docs/**"
+            RutasApi.SWAGGER_UI_HTML,
+            RutasApi.SWAGGER_UI,
+            RutasApi.API_DOCS
     };
 
     @Bean
@@ -82,6 +84,7 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(RUTAS_PUBLICAS).permitAll()
+                        .requestMatchers(RutasApi.ADMIN_SOLICITUDES_SOCIO).hasRole("ADMIN")
                         .anyRequest().authenticated())
                 .exceptionHandling(handling -> handling
                         .authenticationEntryPoint(authenticationEntryPoint)

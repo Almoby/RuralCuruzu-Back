@@ -55,4 +55,30 @@ public class ConsoleEmailService implements EmailService {
                 ============================================================""",
                 destinatario, nombre);
     }
+
+    @Override
+    public void enviarCorreoConfirmacionSolicitudSocio(String destinatario, String nombre, String numeroSolicitud) {
+        log.info("""
+                ==================== EMAIL (simulado) ====================
+                Para: {}
+                Asunto: Recibimos tu solicitud - Rural Curuzú
+                Hola {},
+                Recibimos tu solicitud para ser socio. Tu número de solicitud es {}.
+                Te vamos a avisar por este medio cuando sea revisada.
+                ============================================================""",
+                destinatario, nombre, numeroSolicitud);
+    }
+
+    @Override
+    public void enviarCorreoRechazoSolicitudSocio(String destinatario, String nombre, String numeroSolicitud, String motivo) {
+        log.info("""
+                ==================== EMAIL (simulado) ====================
+                Para: {}
+                Asunto: Tu solicitud fue rechazada - Rural Curuzú
+                Hola {},
+                Tu solicitud {} fue rechazada. Motivo: {}
+                Si creés que fue un error, podés contactarnos para que la revisemos de nuevo.
+                ============================================================""",
+                destinatario, nombre, numeroSolicitud, motivo);
+    }
 }

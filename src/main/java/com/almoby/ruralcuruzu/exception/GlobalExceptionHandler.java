@@ -98,6 +98,34 @@ public class GlobalExceptionHandler {
         return responder(HttpStatus.UNAUTHORIZED, ex.getMessage(), request);
     }
 
+    @ExceptionHandler(EmailYaRegistradoException.class)
+    public ResponseEntity<ApiErrorResponse> handleEmailYaRegistrado(EmailYaRegistradoException ex,
+                                                                      HttpServletRequest request) {
+        log.warn("Solicitud de socio rechazada [{}]: {}", request.getRequestURI(), ex.getMessage());
+        return responder(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(DocumentoYaRegistradoException.class)
+    public ResponseEntity<ApiErrorResponse> handleDocumentoYaRegistrado(DocumentoYaRegistradoException ex,
+                                                                          HttpServletRequest request) {
+        log.warn("Solicitud de socio rechazada [{}]: {}", request.getRequestURI(), ex.getMessage());
+        return responder(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(SolicitudNoEncontradaException.class)
+    public ResponseEntity<ApiErrorResponse> handleSolicitudNoEncontrada(SolicitudNoEncontradaException ex,
+                                                                          HttpServletRequest request) {
+        log.warn("Solicitud no encontrada [{}]: {}", request.getRequestURI(), ex.getMessage());
+        return responder(HttpStatus.NOT_FOUND, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(TransicionEstadoInvalidaException.class)
+    public ResponseEntity<ApiErrorResponse> handleTransicionEstadoInvalida(TransicionEstadoInvalidaException ex,
+                                                                             HttpServletRequest request) {
+        log.warn("Transición de estado rechazada [{}]: {}", request.getRequestURI(), ex.getMessage());
+        return responder(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
+    }
+
     @ExceptionHandler(AccessDeniedException.class)
     public ResponseEntity<ApiErrorResponse> handleAccessDenied(AccessDeniedException ex,
                                                                 HttpServletRequest request) {

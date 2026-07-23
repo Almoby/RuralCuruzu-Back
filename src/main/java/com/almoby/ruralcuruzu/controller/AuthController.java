@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.almoby.ruralcuruzu.constantes.ClavesRateLimiter;
 import com.almoby.ruralcuruzu.dto.request.ForgotPasswordRequest;
 import com.almoby.ruralcuruzu.dto.request.LoginRequest;
 import com.almoby.ruralcuruzu.dto.request.LogoutRequest;
@@ -45,8 +46,6 @@ import lombok.extern.slf4j.Slf4j;
 @Tag(name = "Autenticación", description = "Login, logout, renovación de sesión y recuperación de contraseña "
         + "para Socios, Comercios y Admins.")
 public class AuthController {
-
-    private static final String PREFIJO_CLAVE_LOGIN = "login-ip:";
 
     private final AuthService authService;
     private final RateLimiterService rateLimiterService;
@@ -85,7 +84,7 @@ public class AuthController {
 
         String ip = obtenerIpCliente(httpRequest);
         boolean permitido = rateLimiterService.permitirIntento(
-                PREFIJO_CLAVE_LOGIN + ip, maxIntentosLoginPorIp, Duration.ofMinutes(5));
+                ClavesRateLimiter.PREFIJO_LOGIN_IP + ip, maxIntentosLoginPorIp, Duration.ofMinutes(5));
 
         if (!permitido) {
             log.warn("POST /api/auth/login - demasiados intentos desde ip={}", ip);

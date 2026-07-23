@@ -21,9 +21,9 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
-import com.almoby.ruralcuruzu.domain.EstadoUsuario;
-import com.almoby.ruralcuruzu.domain.Rol;
 import com.almoby.ruralcuruzu.domain.Usuario;
+import com.almoby.ruralcuruzu.enums.EstadoUsuario;
+import com.almoby.ruralcuruzu.enums.Rol;
 import com.almoby.ruralcuruzu.dto.request.LoginRequest;
 import com.almoby.ruralcuruzu.dto.response.LoginResponse;
 import com.almoby.ruralcuruzu.exception.CredencialesInvalidasException;

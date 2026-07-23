@@ -7,6 +7,9 @@ import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.mongodb.core.mapping.Field;
 
+import com.almoby.ruralcuruzu.enums.EstadoUsuario;
+import com.almoby.ruralcuruzu.enums.Rol;
+
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
