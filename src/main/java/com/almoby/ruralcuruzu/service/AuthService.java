@@ -7,11 +7,15 @@ public interface AuthService {
 
     /**
      * Autentica un usuario (Socio, Comercio o Admin) y devuelve su token.
+     * Si el rol es SOCIO o COMERCIO, además de la cuenta de Usuario también
+     * se valida que el Socio/Comercio vinculado (por refId) esté ACTIVO: un
+     * socio dado de baja o un comercio suspendido no puede loguearse aunque
+     * su cuenta de Usuario en sí siga activa.
      *
      * @throws com.almoby.ruralcuruzu.exception.CredencialesInvalidasException si el email no existe
      *         o la contraseña no coincide.
      * @throws com.almoby.ruralcuruzu.exception.UsuarioInactivoException si el usuario existe pero
-     *         su cuenta está inactiva o suspendida.
+     *         su cuenta está inactiva o suspendida, o si el Socio/Comercio vinculado no está ACTIVO.
      */
     LoginResponse login(LoginRequest request);
 
@@ -57,4 +61,17 @@ public interface AuthService {
      *         es igual a la actual.
      */
     void restablecerPassword(String token, String nuevaPassword);
+
+    /**
+     * Cambia la contraseña de un usuario ya autenticado (a diferencia de
+     * restablecerPassword, que depende de un token de un correo): sirve para
+     * el primer ingreso con contraseña temporal, o para cualquiera que
+     * simplemente quiera cambiarla desde su sesión activa.
+     *
+     * @throws com.almoby.ruralcuruzu.exception.PasswordActualIncorrectaException si la
+     *         contraseña actual enviada no coincide con la guardada.
+     * @throws com.almoby.ruralcuruzu.exception.PasswordIgualException si la nueva contraseña
+     *         es igual a la actual.
+     */
+    void cambiarPassword(String usuarioId, String passwordActual, String passwordNueva);
 }

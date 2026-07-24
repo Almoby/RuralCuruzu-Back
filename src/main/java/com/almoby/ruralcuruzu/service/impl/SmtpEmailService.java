@@ -1,5 +1,8 @@
 package com.almoby.ruralcuruzu.service.impl;
 
+import java.math.BigDecimal;
+import java.time.LocalDate;
+
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.mail.MailException;
@@ -187,6 +190,213 @@ public class SmtpEmailService implements EmailService {
                 <p>Tu número de solicitud es: <strong>%s</strong></p>
                 <p>Te vamos a avisar por este mismo medio en cuanto sea revisada.</p>
                 """.formatted(nombre, numeroSolicitud);
+    }
+
+    @Override
+    public void enviarCorreoCredencialesSocio(String destinatario, String nombre, String numeroSocio, String passwordTemporal) {
+        try {
+            MimeMessage mensaje = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(mensaje, true, "UTF-8");
+
+            helper.setFrom(remitente);
+            helper.setTo(destinatario);
+            helper.setSubject("¡Bienvenido a Rural Curuzú! Tus credenciales de acceso");
+            helper.setText(cuerpoTextoPlanoCredenciales(nombre, numeroSocio, destinatario, passwordTemporal),
+                    cuerpoHtmlCredenciales(nombre, numeroSocio, destinatario, passwordTemporal));
+
+            mailSender.send(mensaje);
+            log.info("Correo de credenciales de socio enviado a email={} numeroSocio={}", destinatario, numeroSocio);
+        } catch (MessagingException | MailException ex) {
+            // A diferencia de los otros correos de aviso, acá si falla el envío el
+            // socio se queda sin poder acceder a la plataforma: se relanza como error
+            // de infraestructura para que quede visible (500) y se pueda reintentar
+            // manualmente en vez de quedar en un estado silencioso a medias.
+            log.error("Error enviando correo de credenciales a email={} numeroSocio={}", destinatario, numeroSocio, ex);
+            throw new IllegalStateException("No se pudo enviar el correo de credenciales del socio", ex);
+        }
+    }
+
+    private String cuerpoTextoPlanoCredenciales(String nombre, String numeroSocio, String usuario, String passwordTemporal) {
+        return """
+                Hola %s,
+
+                ¡Tu solicitud para ser socio de Rural Curuzú fue aprobada!
+                Tu número de socio es: %s
+
+                Ya podés ingresar a la plataforma con estas credenciales:
+                Usuario: %s
+                Contraseña temporal: %s
+
+                Por seguridad, vas a tener que elegir una nueva contraseña la primera vez que ingreses.
+                """.formatted(nombre, numeroSocio, usuario, passwordTemporal);
+    }
+
+    private String cuerpoHtmlCredenciales(String nombre, String numeroSocio, String usuario, String passwordTemporal) {
+        return """
+                <p>Hola %s,</p>
+                <p>¡Tu solicitud para ser socio de <strong>Rural Curuzú</strong> fue aprobada!</p>
+                <p>Tu número de socio es: <strong>%s</strong></p>
+                <p>Ya podés ingresar a la plataforma con estas credenciales:</p>
+                <p>Usuario: <strong>%s</strong><br>Contraseña temporal: <strong>%s</strong></p>
+                <p>Por seguridad, vas a tener que elegir una nueva contraseña la primera vez que ingreses.</p>
+                """.formatted(nombre, numeroSocio, usuario, passwordTemporal);
+    }
+
+    @Override
+    public void enviarCorreoCredencialesComercio(String destinatario, String nombreComercial, String passwordTemporal) {
+        try {
+            MimeMessage mensaje = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(mensaje, true, "UTF-8");
+
+            helper.setFrom(remitente);
+            helper.setTo(destinatario);
+            helper.setSubject("¡Bienvenido a Rural Curuzú! Tus credenciales de acceso");
+            helper.setText(cuerpoTextoPlanoCredencialesComercio(nombreComercial, destinatario, passwordTemporal),
+                    cuerpoHtmlCredencialesComercio(nombreComercial, destinatario, passwordTemporal));
+
+            mailSender.send(mensaje);
+            log.info("Correo de credenciales de comercio enviado a email={}", destinatario);
+        } catch (MessagingException | MailException ex) {
+            // Igual que con las credenciales de socio: si esto falla, el comercio se
+            // queda sin poder acceder, así que se relanza en vez de tragarse el error.
+            log.error("Error enviando correo de credenciales de comercio a email={}", destinatario, ex);
+            throw new IllegalStateException("No se pudo enviar el correo de credenciales del comercio", ex);
+        }
+    }
+
+    private String cuerpoTextoPlanoCredencialesComercio(String nombreComercial, String usuario, String passwordTemporal) {
+        return """
+                Hola %s,
+
+                Tu comercio fue dado de alta en Rural Curuzú.
+
+                Ya podés ingresar a la plataforma con estas credenciales:
+                Usuario: %s
+                Contraseña temporal: %s
+
+                Por seguridad, vas a tener que elegir una nueva contraseña la primera vez que ingreses.
+                """.formatted(nombreComercial, usuario, passwordTemporal);
+    }
+
+    private String cuerpoHtmlCredencialesComercio(String nombreComercial, String usuario, String passwordTemporal) {
+        return """
+                <p>Hola %s,</p>
+                <p>Tu comercio fue dado de alta en <strong>Rural Curuzú</strong>.</p>
+                <p>Ya podés ingresar a la plataforma con estas credenciales:</p>
+                <p>Usuario: <strong>%s</strong><br>Contraseña temporal: <strong>%s</strong></p>
+                <p>Por seguridad, vas a tener que elegir una nueva contraseña la primera vez que ingreses.</p>
+                """.formatted(nombreComercial, usuario, passwordTemporal);
+    }
+
+    @Override
+    public void enviarCorreoCuotaGenerada(String destinatario, String nombre, String periodo,
+                                           BigDecimal importe, LocalDate fechaVencimiento) {
+        try {
+            MimeMessage mensaje = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(mensaje, true, "UTF-8");
+
+            helper.setFrom(remitente);
+            helper.setTo(destinatario);
+            helper.setSubject("Se generó tu cuota de " + periodo + " - Rural Curuzú");
+            helper.setText(cuerpoTextoPlanoCuotaGenerada(nombre, periodo, importe, fechaVencimiento),
+                    cuerpoHtmlCuotaGenerada(nombre, periodo, importe, fechaVencimiento));
+
+            mailSender.send(mensaje);
+            log.info("Correo de cuota generada enviado a email={} periodo={}", destinatario, periodo);
+        } catch (MessagingException | MailException ex) {
+            // La cuota YA se generó con éxito en la base: que falle este aviso
+            // no debe interrumpir la generación del resto de las cuotas.
+            log.error("Error enviando correo de cuota generada a email={} periodo={}", destinatario, periodo, ex);
+        }
+    }
+
+    private String cuerpoTextoPlanoCuotaGenerada(String nombre, String periodo, BigDecimal importe, LocalDate vencimiento) {
+        return """
+                Hola %s,
+
+                Se generó tu cuota del período %s por $%s.
+                Vence el %s.
+                """.formatted(nombre, periodo, importe, vencimiento);
+    }
+
+    private String cuerpoHtmlCuotaGenerada(String nombre, String periodo, BigDecimal importe, LocalDate vencimiento) {
+        return """
+                <p>Hola %s,</p>
+                <p>Se generó tu cuota del período <strong>%s</strong> por <strong>$%s</strong>.</p>
+                <p>Vence el <strong>%s</strong>.</p>
+                """.formatted(nombre, periodo, importe, vencimiento);
+    }
+
+    @Override
+    public void enviarCorreoPagoRegistrado(String destinatario, String nombre, String periodo, BigDecimal importe) {
+        try {
+            MimeMessage mensaje = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(mensaje, true, "UTF-8");
+
+            helper.setFrom(remitente);
+            helper.setTo(destinatario);
+            helper.setSubject("Confirmamos tu pago - Rural Curuzú");
+            helper.setText(cuerpoTextoPlanoPagoRegistrado(nombre, periodo, importe),
+                    cuerpoHtmlPagoRegistrado(nombre, periodo, importe));
+
+            mailSender.send(mensaje);
+            log.info("Correo de pago registrado enviado a email={} periodo={}", destinatario, periodo);
+        } catch (MessagingException | MailException ex) {
+            // El pago YA quedó registrado con éxito: que falle este aviso no
+            // debe romper la respuesta de la operación.
+            log.error("Error enviando correo de pago registrado a email={} periodo={}", destinatario, periodo, ex);
+        }
+    }
+
+    private String cuerpoTextoPlanoPagoRegistrado(String nombre, String periodo, BigDecimal importe) {
+        return """
+                Hola %s,
+
+                Confirmamos el pago de tu cuota del período %s por $%s.
+                """.formatted(nombre, periodo, importe);
+    }
+
+    private String cuerpoHtmlPagoRegistrado(String nombre, String periodo, BigDecimal importe) {
+        return """
+                <p>Hola %s,</p>
+                <p>Confirmamos el pago de tu cuota del período <strong>%s</strong> por <strong>$%s</strong>.</p>
+                """.formatted(nombre, periodo, importe);
+    }
+
+    @Override
+    public void enviarCorreoPagoRechazado(String destinatario, String nombre, String periodo, String motivo) {
+        try {
+            MimeMessage mensaje = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(mensaje, true, "UTF-8");
+
+            helper.setFrom(remitente);
+            helper.setTo(destinatario);
+            helper.setSubject("Tu pago informado fue rechazado - Rural Curuzú");
+            helper.setText(cuerpoTextoPlanoPagoRechazado(nombre, periodo, motivo),
+                    cuerpoHtmlPagoRechazado(nombre, periodo, motivo));
+
+            mailSender.send(mensaje);
+            log.info("Correo de pago rechazado enviado a email={} periodo={}", destinatario, periodo);
+        } catch (MessagingException | MailException ex) {
+            log.error("Error enviando correo de pago rechazado a email={} periodo={}", destinatario, periodo, ex);
+        }
+    }
+
+    private String cuerpoTextoPlanoPagoRechazado(String nombre, String periodo, String motivo) {
+        return """
+                Hola %s,
+
+                El pago que informaste para la cuota del período %s fue rechazado.
+                Motivo: %s
+                """.formatted(nombre, periodo, motivo);
+    }
+
+    private String cuerpoHtmlPagoRechazado(String nombre, String periodo, String motivo) {
+        return """
+                <p>Hola %s,</p>
+                <p>El pago que informaste para la cuota del período <strong>%s</strong> fue rechazado.</p>
+                <p>Motivo: %s</p>
+                """.formatted(nombre, periodo, motivo);
     }
 
     private String cuerpoTextoPlanoRechazo(String nombre, String numeroSolicitud, String motivo) {

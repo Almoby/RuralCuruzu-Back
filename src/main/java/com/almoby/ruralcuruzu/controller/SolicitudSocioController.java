@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.almoby.ruralcuruzu.constantes.ClavesRateLimiter;
 import com.almoby.ruralcuruzu.constantes.RutasApi;
 import com.almoby.ruralcuruzu.dto.request.SolicitudSocioRequest;
-import com.almoby.ruralcuruzu.dto.response.SolicitudSocioResponse;
+import com.almoby.ruralcuruzu.dto.response.SolicitudSocioCreadaResponse;
 import com.almoby.ruralcuruzu.exception.ApiErrorResponse;
 import com.almoby.ruralcuruzu.exception.DemasiadasSolicitudesException;
 import com.almoby.ruralcuruzu.security.RateLimiterService;
@@ -68,7 +68,7 @@ public class SolicitudSocioController {
                     content = @Content(schema = @Schema(implementation = ApiErrorResponse.class)))
     })
     @PostMapping
-    public ResponseEntity<SolicitudSocioResponse> crearSolicitud(@Valid @RequestBody SolicitudSocioRequest request,
+    public ResponseEntity<SolicitudSocioCreadaResponse> crearSolicitud(@Valid @RequestBody SolicitudSocioRequest request,
                                                           HttpServletRequest httpRequest) {
         log.info("POST /api/solicitudes-socio - nueva solicitud, tipoPersona={} categoria={}",
                 request.tipoPersona(), request.categoriaSolicitada());
@@ -81,9 +81,9 @@ public class SolicitudSocioController {
             throw new DemasiadasSolicitudesException();
         }
 
-        SolicitudSocioResponse response = solicitudSocioService.crearSolicitudSocio(request);
+        SolicitudSocioCreadaResponse response = solicitudSocioService.crearSolicitudSocio(request);
 
-        log.info("POST /api/solicitudes-socio - solicitud creada numeroSolicitud={}", response.numeroSolicitud());
+        log.info("POST /api/solicitudes-socio - solicitud creada numeroSolicitud={}", response.solicitud().numeroSolicitud());
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 

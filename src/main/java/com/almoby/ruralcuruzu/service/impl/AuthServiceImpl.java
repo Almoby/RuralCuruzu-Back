@@ -5,14 +5,20 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import com.almoby.ruralcuruzu.constantes.ClavesRateLimiter;
+import com.almoby.ruralcuruzu.domain.Comercio;
+import com.almoby.ruralcuruzu.domain.Socio;
 import com.almoby.ruralcuruzu.domain.Usuario;
 import com.almoby.ruralcuruzu.dto.request.LoginRequest;
 import com.almoby.ruralcuruzu.dto.response.LoginResponse;
+import com.almoby.ruralcuruzu.enums.Rol;
 import com.almoby.ruralcuruzu.exception.CredencialesInvalidasException;
 import com.almoby.ruralcuruzu.exception.CuentaBloqueadaTemporalmenteException;
+import com.almoby.ruralcuruzu.exception.PasswordActualIncorrectaException;
 import com.almoby.ruralcuruzu.exception.PasswordIgualException;
 import com.almoby.ruralcuruzu.exception.RefreshTokenInvalidoException;
 import com.almoby.ruralcuruzu.exception.UsuarioInactivoException;
+import com.almoby.ruralcuruzu.repository.ComercioRepository;
+import com.almoby.ruralcuruzu.repository.SocioRepository;
 import com.almoby.ruralcuruzu.repository.UsuarioRepository;
 import com.almoby.ruralcuruzu.security.RateLimiterService;
 import com.almoby.ruralcuruzu.security.jwt.JwtService;
@@ -32,6 +38,8 @@ import java.time.Instant;
 public class AuthServiceImpl implements AuthService {
 
     private final UsuarioRepository usuarioRepository;
+    private final SocioRepository socioRepository;
+    private final ComercioRepository comercioRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final TokenRevocadoService tokenRevocadoService;
@@ -44,6 +52,8 @@ public class AuthServiceImpl implements AuthService {
     private final int maxSolicitudesRecuperacionPorHora;
 
     public AuthServiceImpl(UsuarioRepository usuarioRepository,
+                            SocioRepository socioRepository,
+                            ComercioRepository comercioRepository,
                             PasswordEncoder passwordEncoder,
                             JwtService jwtService,
                             TokenRevocadoService tokenRevocadoService,
@@ -55,6 +65,8 @@ public class AuthServiceImpl implements AuthService {
                             @Value("${app.login.duracion-bloqueo-minutos:15}") long duracionBloqueoMinutos,
                             @Value("${app.password-reset.max-solicitudes-por-hora:3}") int maxSolicitudesRecuperacionPorHora) {
         this.usuarioRepository = usuarioRepository;
+        this.socioRepository = socioRepository;
+        this.comercioRepository = comercioRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
         this.tokenRevocadoService = tokenRevocadoService;
@@ -103,6 +115,8 @@ public class AuthServiceImpl implements AuthService {
             log.warn("Login bloqueado: usuario email={} tiene estado={}", email, usuario.getEstado());
             throw new UsuarioInactivoException();
         }
+
+        validarPerfilVinculadoActivo(usuario);
 
         String token = jwtService.generarToken(usuario);
         String refreshToken = refreshTokenService.generar(usuario.getId());
@@ -168,6 +182,8 @@ public class AuthServiceImpl implements AuthService {
             throw new UsuarioInactivoException();
         }
 
+        validarPerfilVinculadoActivo(usuario);
+
         String nuevoAccessToken = jwtService.generarToken(usuario);
         log.info("Access token renovado vía refresh para email={}", usuario.getEmail());
 
@@ -210,33 +226,89 @@ public class AuthServiceImpl implements AuthService {
     @Override
     public void restablecerPassword(String token, String nuevaPassword) {
         String usuarioId = passwordResetTokenService.validarYObtenerUsuarioId(token);
+        Usuario usuario = buscarUsuarioOFallar(usuarioId);
 
-        Usuario usuario = usuarioRepository.findById(usuarioId)
-                .orElseThrow(() -> {
-                    // El token era válido pero el usuario dueño ya no existe (dado de baja, por ejemplo).
-                    log.warn("Token de recuperación válido pero usuarioId={} ya no existe", usuarioId);
-                    return new CredencialesInvalidasException();
-                });
+        actualizarPasswordYNotificar(usuario, nuevaPassword);
+        passwordResetTokenService.marcarComoUsado(token);
+    }
 
-        if (passwordEncoder.matches(nuevaPassword, usuario.getPasswordHash())) {
-            log.warn("Intento de restablecer contraseña con la misma contraseña actual, usuarioId={}", usuarioId);
+    @Override
+    public void cambiarPassword(String usuarioId, String passwordActual, String passwordNueva) {
+        Usuario usuario = buscarUsuarioOFallar(usuarioId);
+
+        if (!passwordEncoder.matches(passwordActual, usuario.getPasswordHash())) {
+            log.warn("Cambio de contraseña rechazado: contraseña actual incorrecta, usuarioId={}", usuarioId);
+            throw new PasswordActualIncorrectaException();
+        }
+
+        actualizarPasswordYNotificar(usuario, passwordNueva);
+    }
+
+    /**
+     * Usada tanto por restablecerPassword (token de email) como por
+     * cambiarPassword (sesión autenticada): en ambos casos, si llegamos hasta
+     * acá, el usuario ya probó quién es de alguna forma. Lo único que falta
+     * es la regla de negocio común: no repetir la contraseña, encriptar,
+     * guardar, sacar el flag de "requiere cambio", y avisar por correo
+     * (best-effort: si el correo falla, no debe tirar abajo el cambio ya hecho).
+     */
+    private void actualizarPasswordYNotificar(Usuario usuario, String passwordNueva) {
+        if (passwordEncoder.matches(passwordNueva, usuario.getPasswordHash())) {
+            log.warn("Intento de poner una contraseña igual a la actual, usuarioId={}", usuario.getId());
             throw new PasswordIgualException();
         }
 
-        usuario.setPasswordHash(passwordEncoder.encode(nuevaPassword));
+        usuario.setPasswordHash(passwordEncoder.encode(passwordNueva));
         usuario.setRequiereCambioPassword(false);
         usuarioRepository.save(usuario);
 
-        passwordResetTokenService.marcarComoUsado(token);
-        log.info("Contraseña restablecida con éxito para usuarioId={}", usuarioId);
+        log.info("Contraseña actualizada con éxito para usuarioId={}", usuario.getId());
 
         try {
             emailService.enviarCorreoPasswordCambiada(usuario.getEmail(), usuario.getNombre());
         } catch (RuntimeException ex) {
-            // La contraseña ya se cambió con éxito: un fallo al avisar por correo
-            // no debe hacer fallar la respuesta del endpoint. Solo se loguea.
             log.warn("No se pudo enviar el correo de confirmación de cambio de contraseña, usuarioId={}",
-                    usuarioId, ex);
+                    usuario.getId(), ex);
+        }
+    }
+
+    private Usuario buscarUsuarioOFallar(String usuarioId) {
+        return usuarioRepository.findById(usuarioId)
+                .orElseThrow(() -> {
+                    // No debería pasar nunca en la práctica (el id sale de un token/sesión
+                    // válidos), pero si el usuario fue borrado mientras tanto, lo tratamos
+                    // igual que credenciales inválidas en vez de un 500 genérico.
+                    log.warn("Operación de contraseña rechazada: usuarioId={} ya no existe", usuarioId);
+                    return new CredencialesInvalidasException();
+                });
+    }
+
+    /**
+     * Que el Usuario esté ACTIVO no alcanza para SOCIO/COMERCIO: el perfil de
+     * negocio vinculado (Socio o Comercio) también tiene su propio estado, y
+     * puede volverse INACTIVO/SUSPENDIDO/DADO_DE_BAJA de forma independiente
+     * de la cuenta de acceso. Un ADMIN no tiene refId, así que no hay nada
+     * que validar para ese rol.
+     */
+    private void validarPerfilVinculadoActivo(Usuario usuario) {
+        if (usuario.getRol() == Rol.SOCIO) {
+            boolean socioActivo = socioRepository.findById(usuario.getRefId())
+                    .map(Socio::estaActivo)
+                    .orElse(false);
+            if (!socioActivo) {
+                log.warn("Login rechazado: el socio vinculado (refId={}) no está activo o ya no existe",
+                        usuario.getRefId());
+                throw new UsuarioInactivoException();
+            }
+        } else if (usuario.getRol() == Rol.COMERCIO) {
+            boolean comercioActivo = comercioRepository.findById(usuario.getRefId())
+                    .map(Comercio::estaActivo)
+                    .orElse(false);
+            if (!comercioActivo) {
+                log.warn("Login rechazado: el comercio vinculado (refId={}) no está activo o ya no existe",
+                        usuario.getRefId());
+                throw new UsuarioInactivoException();
+            }
         }
     }
 

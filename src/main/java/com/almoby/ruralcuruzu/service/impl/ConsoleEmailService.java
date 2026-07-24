@@ -1,5 +1,8 @@
 package com.almoby.ruralcuruzu.service.impl;
 
+import java.math.BigDecimal;
+import java.time.LocalDate;
+
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
@@ -80,5 +83,72 @@ public class ConsoleEmailService implements EmailService {
                 Si creés que fue un error, podés contactarnos para que la revisemos de nuevo.
                 ============================================================""",
                 destinatario, nombre, numeroSolicitud, motivo);
+    }
+
+    @Override
+    public void enviarCorreoCredencialesSocio(String destinatario, String nombre, String numeroSocio, String passwordTemporal) {
+        log.info("""
+                ==================== EMAIL (simulado) ====================
+                Para: {}
+                Asunto: ¡Bienvenido a Rural Curuzú! Tus credenciales de acceso
+                Hola {},
+                Tu solicitud fue aprobada. Tu número de socio es {}.
+                Usuario: {}
+                Contraseña temporal: {}
+                Vas a tener que cambiarla la primera vez que ingreses.
+                ============================================================""",
+                destinatario, nombre, numeroSocio, destinatario, passwordTemporal);
+    }
+
+    @Override
+    public void enviarCorreoCredencialesComercio(String destinatario, String nombreComercial, String passwordTemporal) {
+        log.info("""
+                ==================== EMAIL (simulado) ====================
+                Para: {}
+                Asunto: ¡Bienvenido a Rural Curuzú! Tus credenciales de acceso
+                Hola {},
+                Tu comercio fue dado de alta en Rural Curuzú.
+                Usuario: {}
+                Contraseña temporal: {}
+                Vas a tener que cambiarla la primera vez que ingreses.
+                ============================================================""",
+                destinatario, nombreComercial, destinatario, passwordTemporal);
+    }
+
+    @Override
+    public void enviarCorreoCuotaGenerada(String destinatario, String nombre, String periodo,
+                                           BigDecimal importe, LocalDate fechaVencimiento) {
+        log.info("""
+                ==================== EMAIL (simulado) ====================
+                Para: {}
+                Asunto: Se generó tu cuota de {} - Rural Curuzú
+                Hola {},
+                Se generó tu cuota del período {} por ${}. Vence el {}.
+                ============================================================""",
+                destinatario, periodo, nombre, periodo, importe, fechaVencimiento);
+    }
+
+    @Override
+    public void enviarCorreoPagoRegistrado(String destinatario, String nombre, String periodo, BigDecimal importe) {
+        log.info("""
+                ==================== EMAIL (simulado) ====================
+                Para: {}
+                Asunto: Confirmamos tu pago - Rural Curuzú
+                Hola {},
+                Confirmamos el pago de tu cuota del período {} por ${}.
+                ============================================================""",
+                destinatario, nombre, periodo, importe);
+    }
+
+    @Override
+    public void enviarCorreoPagoRechazado(String destinatario, String nombre, String periodo, String motivo) {
+        log.info("""
+                ==================== EMAIL (simulado) ====================
+                Para: {}
+                Asunto: Tu pago informado fue rechazado - Rural Curuzú
+                Hola {},
+                El pago que informaste para la cuota del período {} fue rechazado. Motivo: {}
+                ============================================================""",
+                destinatario, nombre, periodo, motivo);
     }
 }

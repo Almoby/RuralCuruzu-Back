@@ -84,6 +84,13 @@ public class GlobalExceptionHandler {
         return responder(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
     }
 
+    @ExceptionHandler(PasswordActualIncorrectaException.class)
+    public ResponseEntity<ApiErrorResponse> handlePasswordActualIncorrecta(PasswordActualIncorrectaException ex,
+                                                                             HttpServletRequest request) {
+        log.warn("Cambio de contraseña rechazado [{}]: {}", request.getRequestURI(), ex.getMessage());
+        return responder(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
+    }
+
     @ExceptionHandler(RefreshTokenInvalidoException.class)
     public ResponseEntity<ApiErrorResponse> handleRefreshTokenInvalido(RefreshTokenInvalidoException ex,
                                                                          HttpServletRequest request) {
@@ -124,6 +131,55 @@ public class GlobalExceptionHandler {
                                                                              HttpServletRequest request) {
         log.warn("Transición de estado rechazada [{}]: {}", request.getRequestURI(), ex.getMessage());
         return responder(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(CuitYaRegistradoException.class)
+    public ResponseEntity<ApiErrorResponse> handleCuitYaRegistrado(CuitYaRegistradoException ex,
+                                                                     HttpServletRequest request) {
+        log.warn("Alta de comercio rechazada [{}]: {}", request.getRequestURI(), ex.getMessage());
+        return responder(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(CorreoYaRegistradoException.class)
+    public ResponseEntity<ApiErrorResponse> handleCorreoYaRegistrado(CorreoYaRegistradoException ex,
+                                                                       HttpServletRequest request) {
+        log.warn("Alta de comercio rechazada [{}]: {}", request.getRequestURI(), ex.getMessage());
+        return responder(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(ComercioNoEncontradoException.class)
+    public ResponseEntity<ApiErrorResponse> handleComercioNoEncontrado(ComercioNoEncontradoException ex,
+                                                                         HttpServletRequest request) {
+        log.warn("Comercio no encontrado [{}]: {}", request.getRequestURI(), ex.getMessage());
+        return responder(HttpStatus.NOT_FOUND, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(TipoCuotaNoEncontradoException.class)
+    public ResponseEntity<ApiErrorResponse> handleTipoCuotaNoEncontrado(TipoCuotaNoEncontradoException ex,
+                                                                          HttpServletRequest request) {
+        log.warn("Tipo de cuota no encontrado [{}]: {}", request.getRequestURI(), ex.getMessage());
+        return responder(HttpStatus.NOT_FOUND, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(CuotaNoEncontradaException.class)
+    public ResponseEntity<ApiErrorResponse> handleCuotaNoEncontrada(CuotaNoEncontradaException ex,
+                                                                      HttpServletRequest request) {
+        log.warn("Cuota no encontrada [{}]: {}", request.getRequestURI(), ex.getMessage());
+        return responder(HttpStatus.NOT_FOUND, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(CuotaEstadoInvalidoException.class)
+    public ResponseEntity<ApiErrorResponse> handleCuotaEstadoInvalido(CuotaEstadoInvalidoException ex,
+                                                                        HttpServletRequest request) {
+        log.warn("Operación de cuota rechazada [{}]: {}", request.getRequestURI(), ex.getMessage());
+        return responder(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(SocioNoEncontradoException.class)
+    public ResponseEntity<ApiErrorResponse> handleSocioNoEncontrado(SocioNoEncontradoException ex,
+                                                                      HttpServletRequest request) {
+        log.warn("Socio no encontrado [{}]: {}", request.getRequestURI(), ex.getMessage());
+        return responder(HttpStatus.NOT_FOUND, ex.getMessage(), request);
     }
 
     @ExceptionHandler(AccessDeniedException.class)

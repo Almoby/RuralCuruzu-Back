@@ -4,6 +4,7 @@ import java.time.Duration;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestAttribute;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -11,6 +12,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.almoby.ruralcuruzu.constantes.ClavesRateLimiter;
+import com.almoby.ruralcuruzu.dto.request.CambiarPasswordRequest;
 import com.almoby.ruralcuruzu.dto.request.ForgotPasswordRequest;
 import com.almoby.ruralcuruzu.dto.request.LoginRequest;
 import com.almoby.ruralcuruzu.dto.request.LogoutRequest;
@@ -20,6 +22,7 @@ import com.almoby.ruralcuruzu.dto.response.LoginResponse;
 import com.almoby.ruralcuruzu.dto.response.MensajeResponse;
 import com.almoby.ruralcuruzu.exception.ApiErrorResponse;
 import com.almoby.ruralcuruzu.exception.DemasiadasSolicitudesException;
+import com.almoby.ruralcuruzu.security.AuthenticatedUser;
 import com.almoby.ruralcuruzu.security.RateLimiterService;
 import com.almoby.ruralcuruzu.security.jwt.JwtAuthenticationFilter;
 import com.almoby.ruralcuruzu.service.AuthService;
@@ -214,6 +217,40 @@ public class AuthController {
         authService.restablecerPassword(request.token(), request.nuevaPassword());
 
         log.info("POST /api/auth/reset-password - contraseña restablecida correctamente");
+        return ResponseEntity.ok(MensajeResponse.of("Contraseña actualizada correctamente"));
+    }
+
+    /**
+     * Requiere sesión activa (Bearer token): a diferencia de reset-password,
+     * acá no hace falta ningún token de email porque la propia sesión ya
+     * prueba quién es. Pensado sobre todo para el primer ingreso con
+     * contraseña temporal (ver alta de Socio, documento sección 8.4).
+     */
+    @Operation(
+            summary = "Cambiar la contraseña (autenticado)",
+            description = "Cambia la contraseña del usuario logueado, mandando la contraseña actual y la nueva. "
+                    + "No depende de ningún correo ni token: la sesión activa (Bearer token) ya prueba quién es. "
+                    + "Sirve, por ejemplo, para el primer ingreso de un Socio con la contraseña temporal que le "
+                    + "llegó por correo al aprobarse su solicitud.",
+            security = @SecurityRequirement(name = "bearerAuth"))
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Contraseña actualizada correctamente"),
+            @ApiResponse(responseCode = "400", description = "La contraseña actual es incorrecta, o la nueva es "
+                    + "igual a la anterior",
+                    content = @Content(schema = @Schema(implementation = ApiErrorResponse.class))),
+            @ApiResponse(responseCode = "401", description = "No hay token, o el token es inválido/ya expirado",
+                    content = @Content(schema = @Schema(implementation = ApiErrorResponse.class)))
+    })
+    @PostMapping("/cambiar-password")
+    public ResponseEntity<MensajeResponse> cambiarPassword(
+            @Valid @RequestBody CambiarPasswordRequest request,
+            @AuthenticationPrincipal AuthenticatedUser usuarioAutenticado) {
+        log.info("POST /api/auth/cambiar-password - solicitud para usuarioId={}", usuarioAutenticado.usuario().getId());
+
+        authService.cambiarPassword(usuarioAutenticado.usuario().getId(), request.passwordActual(), request.passwordNueva());
+
+        log.info("POST /api/auth/cambiar-password - contraseña cambiada correctamente para usuarioId={}",
+                usuarioAutenticado.usuario().getId());
         return ResponseEntity.ok(MensajeResponse.of("Contraseña actualizada correctamente"));
     }
 }

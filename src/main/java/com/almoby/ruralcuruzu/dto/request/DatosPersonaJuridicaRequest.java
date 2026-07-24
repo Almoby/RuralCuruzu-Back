@@ -50,7 +50,10 @@ public record DatosPersonaJuridicaRequest(
         @Schema(example = "30.123.456")
         @NotBlank(message = "El DNI del responsable es obligatorio")
         @Dni
-        String dniResponsable
+        String dniResponsable,
+
+        @Schema(description = "Dirección del establecimiento, si es distinta de la dirección postal", example = "Ruta 123 km 4")
+        String direccionEstablecimiento
 
 ) {
 }

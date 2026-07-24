@@ -61,7 +61,10 @@ public record DatosPersonaFisicaRequest(
         String ocupacion,
 
         @Schema(description = "Solo si tiene un establecimiento propio", example = "Farmacia Central")
-        String nombreEstablecimiento
+        String nombreEstablecimiento,
+
+        @Schema(description = "Dirección del establecimiento, si es distinta de la dirección personal", example = "Ruta 123 km 4")
+        String direccionEstablecimiento
 
 ) {
 }

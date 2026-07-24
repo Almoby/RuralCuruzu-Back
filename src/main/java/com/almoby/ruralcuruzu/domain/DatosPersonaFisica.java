@@ -52,4 +52,7 @@ public class DatosPersonaFisica {
 
     @Field("nombre_establecimiento")
     private String nombreEstablecimiento;
+
+    @Field("direccion_establecimiento")
+    private String direccionEstablecimiento;
 }

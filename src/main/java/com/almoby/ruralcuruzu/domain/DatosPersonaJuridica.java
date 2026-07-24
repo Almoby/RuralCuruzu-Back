@@ -44,4 +44,7 @@ public class DatosPersonaJuridica {
 
     @Field("dni_responsable")
     private String dniResponsable;
+
+    @Field("direccion_establecimiento")
+    private String direccionEstablecimiento;
 }

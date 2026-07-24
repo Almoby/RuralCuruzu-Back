@@ -21,6 +21,8 @@ import com.almoby.ruralcuruzu.dto.request.DatosPersonaFisicaRequest;
 import com.almoby.ruralcuruzu.dto.request.DatosPersonaJuridicaRequest;
 import com.almoby.ruralcuruzu.dto.request.SolicitudSocioRequest;
 import com.almoby.ruralcuruzu.dto.response.CambiarEstadoSolicitudResponse;
+import com.almoby.ruralcuruzu.dto.response.ObservacionAgregadaResponse;
+import com.almoby.ruralcuruzu.dto.response.SolicitudSocioCreadaResponse;
 import com.almoby.ruralcuruzu.dto.response.SolicitudSocioResponse;
 import com.almoby.ruralcuruzu.dto.response.SolicitudSocioResumenResponse;
 import com.almoby.ruralcuruzu.exception.DocumentoYaRegistradoException;
@@ -31,6 +33,7 @@ import com.almoby.ruralcuruzu.repository.SolicitudSocioRepository;
 import com.almoby.ruralcuruzu.repository.UsuarioRepository;
 import com.almoby.ruralcuruzu.service.EmailService;
 import com.almoby.ruralcuruzu.service.SecuenciaService;
+import com.almoby.ruralcuruzu.service.SocioService;
 import com.almoby.ruralcuruzu.service.SolicitudSocioService;
 
 import lombok.extern.slf4j.Slf4j;
@@ -43,16 +46,15 @@ import lombok.extern.slf4j.Slf4j;
  *   "vivas" (no RECHAZADA/CANCELADA) y contra cuentas de Usuario ya existentes:
  *   una solicitud rechazada o cancelada no debe bloquear un nuevo intento.
  * - Las transiciones de estado están restringidas a un pequeño grafo (ver
- *   TRANSICIONES_VALIDAS): no se puede, por ejemplo, aprobar directamente una
- *   solicitud RECHAZADA (primero hay que reabrirla a EN_REVISION).
- * - Rechazar/aprobar/cancelar no son terminales de verdad: desde cualquiera de
- *   esos tres estados se puede "reabrir" la solicitud, que vuelve a EN_REVISION.
+ *   TRANSICIONES_VALIDAS). Desde PENDIENTE solo se puede pasar a EN_REVISION
+ *   (no se aprueba/rechaza/cancela directo sin pasar por revisión). APROBADA
+ *   y CANCELADA son estados finales de verdad (no hay vuelta atrás). RECHAZADA
+ *   es la única excepción: se puede "reabrir" y volver a EN_REVISION.
  * - Al rechazar, además del motivo obligatorio, se manda un correo al
  *   solicitante avisando el motivo.
- * - Qué pasa con la cuenta de Usuario cuando una solicitud se APRUEBA todavía
- *   NO está resuelto acá a propósito: ese alta se va a definir junto con el
- *   módulo de Gestión de Socios (por ahora no existe un documento Socio al
- *   cual asociarla).
+ * - Al aprobar (documento, sección 8.4), se delega en SocioService la creación
+ *   del Socio y su Usuario con contraseña temporal: esta clase solo dispara
+ *   ese alta, no conoce los detalles de cómo se arma un Socio.
  */
 @Slf4j
 @Service
@@ -62,18 +64,20 @@ public class SolicitudSocioServiceImpl implements SolicitudSocioService {
             EnumSet.of(EstadoSolicitud.PENDIENTE, EstadoSolicitud.EN_REVISION, EstadoSolicitud.APROBADA);
 
     /**
-     * APROBADA, RECHAZADA y CANCELADA no son "terminales" del todo: el documento
-     * (sección de Rechazo) exige poder reabrir una solicitud rechazada más
-     * adelante, y por consistencia se permite lo mismo desde aprobada/cancelada.
-     * Reabrir siempre vuelve a EN_REVISION (no a PENDIENTE): la solicitud ya
-     * pasó por una primera revisión, no es una solicitud nueva.
+     * PENDIENTE solo puede pasar a EN_REVISION: una solicitud recién creada
+     * tiene que pasar primero por esa revisión antes de poder aprobarse,
+     * rechazarse o cancelarse directamente. APROBADA y CANCELADA son estados
+     * finales de verdad: no hay transición posible desde ahí. RECHAZADA es la
+     * única excepción (documento, sección de Rechazo: "podrá volver a abrirse
+     * posteriormente") y solo puede reabrirse hacia EN_REVISION (no a
+     * PENDIENTE: ya pasó por una primera revisión).
      */
     private static final Map<EstadoSolicitud, Set<EstadoSolicitud>> TRANSICIONES_VALIDAS = new EnumMap<>(Map.of(
-            EstadoSolicitud.PENDIENTE, EnumSet.of(EstadoSolicitud.EN_REVISION, EstadoSolicitud.RECHAZADA, EstadoSolicitud.CANCELADA),
+            EstadoSolicitud.PENDIENTE, EnumSet.of(EstadoSolicitud.EN_REVISION),
             EstadoSolicitud.EN_REVISION, EnumSet.of(EstadoSolicitud.APROBADA, EstadoSolicitud.RECHAZADA, EstadoSolicitud.CANCELADA),
-            EstadoSolicitud.APROBADA, EnumSet.of(EstadoSolicitud.EN_REVISION),
+            EstadoSolicitud.APROBADA, EnumSet.noneOf(EstadoSolicitud.class),
             EstadoSolicitud.RECHAZADA, EnumSet.of(EstadoSolicitud.EN_REVISION),
-            EstadoSolicitud.CANCELADA, EnumSet.of(EstadoSolicitud.EN_REVISION)));
+            EstadoSolicitud.CANCELADA, EnumSet.noneOf(EstadoSolicitud.class)));
 
     private static final Set<EstadoSolicitud> ESTADOS_QUE_REQUIEREN_MOTIVO =
             EnumSet.of(EstadoSolicitud.RECHAZADA, EstadoSolicitud.CANCELADA);
@@ -82,19 +86,22 @@ public class SolicitudSocioServiceImpl implements SolicitudSocioService {
     private final UsuarioRepository usuarioRepository;
     private final SecuenciaService secuenciaService;
     private final EmailService emailService;
+    private final SocioService socioService;
 
     public SolicitudSocioServiceImpl(SolicitudSocioRepository solicitudSocioRepository,
                                       UsuarioRepository usuarioRepository,
                                       SecuenciaService secuenciaService,
-                                      EmailService emailService) {
+                                      EmailService emailService,
+                                      SocioService socioService) {
         this.solicitudSocioRepository = solicitudSocioRepository;
         this.usuarioRepository = usuarioRepository;
         this.secuenciaService = secuenciaService;
         this.emailService = emailService;
+        this.socioService = socioService;
     }
 
     @Override
-    public SolicitudSocioResponse crearSolicitudSocio(SolicitudSocioRequest request) {
+    public SolicitudSocioCreadaResponse crearSolicitudSocio(SolicitudSocioRequest request) {
         String email = extraerEmail(request).trim().toLowerCase();
         List<String> documentos = extraerDocumentos(request);
 
@@ -132,7 +139,7 @@ public class SolicitudSocioServiceImpl implements SolicitudSocioService {
         String nombreParaSaludo = solicitud.nombreParaMostrar();
         emailService.enviarCorreoConfirmacionSolicitudSocio(email, nombreParaSaludo, numeroSolicitud);
 
-        return SolicitudSocioResponse.from(solicitud);
+        return SolicitudSocioCreadaResponse.of(SolicitudSocioResponse.from(solicitud));
     }
 
     @Override
@@ -189,7 +196,34 @@ public class SolicitudSocioServiceImpl implements SolicitudSocioService {
                     solicitud.getEmail(), solicitud.nombreParaMostrar(), numeroSolicitud, request.motivo());
         }
 
+        if (nuevoEstado == EstadoSolicitud.APROBADA) {
+            socioService.crearSocioDesdeSolicitud(solicitud, adminId, adminNombre);
+        }
+
         return CambiarEstadoSolicitudResponse.of(numeroSolicitud, nuevoEstado);
+    }
+
+    @Override
+    public ObservacionAgregadaResponse agregarObservacion(String numeroSolicitud, String observacion,
+                                                            String adminId, String adminNombre) {
+        SolicitudSocio solicitud = buscarOFallar(numeroSolicitud);
+        Instant ahora = Instant.now();
+
+        CambioEstadoSolicitud entrada = new CambioEstadoSolicitud();
+        entrada.setEstadoAnterior(solicitud.getEstado());
+        entrada.setEstadoNuevo(solicitud.getEstado());
+        entrada.setFechaHora(ahora);
+        entrada.setAdminResponsableId(adminId);
+        entrada.setAdminResponsableNombre(adminNombre);
+        entrada.setObservacion(observacion);
+
+        solicitud.getHistorial().add(entrada);
+        solicitud.setFechaActualizacion(ahora);
+        solicitudSocioRepository.save(solicitud);
+
+        log.info("Observación agregada a numeroSolicitud={} (admin={})", numeroSolicitud, adminNombre);
+
+        return ObservacionAgregadaResponse.of(numeroSolicitud);
     }
 
     private SolicitudSocio buscarOFallar(String numeroSolicitud) {
@@ -238,11 +272,13 @@ public class SolicitudSocioServiceImpl implements SolicitudSocioService {
 
     private DatosPersonaFisica mapear(DatosPersonaFisicaRequest r) {
         return new DatosPersonaFisica(r.nombre(), r.apellido(), r.dni(), r.fechaNacimiento(), r.cuitCuil(),
-                r.direccion(), r.portalPisoDepartamento(), r.telefono(), r.email(), r.ocupacion(), r.nombreEstablecimiento());
+                r.direccion(), r.portalPisoDepartamento(), r.telefono(), r.email(), r.ocupacion(), r.nombreEstablecimiento(),
+                r.direccionEstablecimiento());
     }
 
     private DatosPersonaJuridica mapear(DatosPersonaJuridicaRequest r) {
         return new DatosPersonaJuridica(r.razonSocial(), r.cuit(), r.direccion(), r.portalPisoDepartamento(),
-                r.telefono(), r.email(), r.nombreEstablecimiento(), r.nombreResponsable(), r.dniResponsable());
+                r.telefono(), r.email(), r.nombreEstablecimiento(), r.nombreResponsable(), r.dniResponsable(),
+                r.direccionEstablecimiento());
     }
 }

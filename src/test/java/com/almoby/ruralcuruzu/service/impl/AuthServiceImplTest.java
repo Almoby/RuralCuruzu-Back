@@ -21,15 +21,22 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
+import com.almoby.ruralcuruzu.domain.Comercio;
+import com.almoby.ruralcuruzu.domain.Socio;
 import com.almoby.ruralcuruzu.domain.Usuario;
+import com.almoby.ruralcuruzu.enums.EstadoComercio;
+import com.almoby.ruralcuruzu.enums.EstadoSocio;
 import com.almoby.ruralcuruzu.enums.EstadoUsuario;
 import com.almoby.ruralcuruzu.enums.Rol;
 import com.almoby.ruralcuruzu.dto.request.LoginRequest;
 import com.almoby.ruralcuruzu.dto.response.LoginResponse;
 import com.almoby.ruralcuruzu.exception.CredencialesInvalidasException;
 import com.almoby.ruralcuruzu.exception.CuentaBloqueadaTemporalmenteException;
+import com.almoby.ruralcuruzu.exception.PasswordActualIncorrectaException;
 import com.almoby.ruralcuruzu.exception.PasswordIgualException;
 import com.almoby.ruralcuruzu.exception.UsuarioInactivoException;
+import com.almoby.ruralcuruzu.repository.ComercioRepository;
+import com.almoby.ruralcuruzu.repository.SocioRepository;
 import com.almoby.ruralcuruzu.repository.UsuarioRepository;
 import com.almoby.ruralcuruzu.security.RateLimiterService;
 import com.almoby.ruralcuruzu.security.jwt.JwtService;
@@ -53,6 +60,10 @@ class AuthServiceImplTest {
     @Mock
     private UsuarioRepository usuarioRepository;
     @Mock
+    private SocioRepository socioRepository;
+    @Mock
+    private ComercioRepository comercioRepository;
+    @Mock
     private PasswordEncoder passwordEncoder;
     @Mock
     private JwtService jwtService;
@@ -73,6 +84,8 @@ class AuthServiceImplTest {
     void setUp() {
         authService = new AuthServiceImpl(
                 usuarioRepository,
+                socioRepository,
+                comercioRepository,
                 passwordEncoder,
                 jwtService,
                 tokenRevocadoService,
@@ -85,17 +98,28 @@ class AuthServiceImplTest {
                 MAX_SOLICITUDES_RECUPERACION_POR_HORA);
     }
 
+    /**
+     * Rol SOCIO con refId="socio-1". Los tests que llegan hasta la validación
+     * del perfil vinculado deben stubbear socioRepository.findById("socio-1")
+     * explícitamente (con un Socio activo, o dejarlo sin stub para simular
+     * que no existe / no está activo).
+     */
     private Usuario usuarioActivo() {
         Usuario usuario = new Usuario();
         usuario.setId("u1");
         usuario.setEmail("socio@ruralcuruzu.com");
         usuario.setPasswordHash("hash-guardado");
         usuario.setRol(Rol.SOCIO);
+        usuario.setRefId("socio-1");
         usuario.setNombre("Juan Pérez");
         usuario.setEstado(EstadoUsuario.ACTIVO);
         usuario.setRequiereCambioPassword(false);
         usuario.setIntentosFallidos(0);
         return usuario;
+    }
+
+    private Socio socioActivo() {
+        return Socio.builder().id("socio-1").estado(EstadoSocio.ACTIVO).build();
     }
 
     // ---------- login ----------
@@ -107,6 +131,7 @@ class AuthServiceImplTest {
 
         when(usuarioRepository.findByEmail(usuario.getEmail())).thenReturn(Optional.of(usuario));
         when(passwordEncoder.matches("password-correcta", usuario.getPasswordHash())).thenReturn(true);
+        when(socioRepository.findById("socio-1")).thenReturn(Optional.of(socioActivo()));
         when(jwtService.generarToken(usuario)).thenReturn("access-token");
         when(jwtService.expiracionEnSegundos()).thenReturn(3600L);
         when(refreshTokenService.generar(usuario.getId())).thenReturn("refresh-token");
@@ -186,6 +211,93 @@ class AuthServiceImplTest {
                 .isInstanceOf(UsuarioInactivoException.class);
 
         verify(jwtService, never()).generarToken(any());
+    }
+
+    @Test
+    void login_conSocioVinculadoInactivo_lanzaUsuarioInactivo() {
+        Usuario usuario = usuarioActivo();
+        LoginRequest request = new LoginRequest(usuario.getEmail(), "password-correcta");
+
+        when(usuarioRepository.findByEmail(usuario.getEmail())).thenReturn(Optional.of(usuario));
+        when(passwordEncoder.matches("password-correcta", usuario.getPasswordHash())).thenReturn(true);
+        when(socioRepository.findById("socio-1"))
+                .thenReturn(Optional.of(Socio.builder().id("socio-1").estado(EstadoSocio.DADO_DE_BAJA).build()));
+
+        assertThatThrownBy(() -> authService.login(request))
+                .isInstanceOf(UsuarioInactivoException.class);
+
+        verify(jwtService, never()).generarToken(any());
+    }
+
+    @Test
+    void login_conSocioVinculadoInexistente_lanzaUsuarioInactivo() {
+        Usuario usuario = usuarioActivo();
+        LoginRequest request = new LoginRequest(usuario.getEmail(), "password-correcta");
+
+        when(usuarioRepository.findByEmail(usuario.getEmail())).thenReturn(Optional.of(usuario));
+        when(passwordEncoder.matches("password-correcta", usuario.getPasswordHash())).thenReturn(true);
+        when(socioRepository.findById("socio-1")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> authService.login(request))
+                .isInstanceOf(UsuarioInactivoException.class);
+    }
+
+    @Test
+    void login_conComercioVinculadoInactivo_lanzaUsuarioInactivo() {
+        Usuario usuario = usuarioActivo();
+        usuario.setRol(Rol.COMERCIO);
+        usuario.setRefId("comercio-1");
+        LoginRequest request = new LoginRequest(usuario.getEmail(), "password-correcta");
+
+        when(usuarioRepository.findByEmail(usuario.getEmail())).thenReturn(Optional.of(usuario));
+        when(passwordEncoder.matches("password-correcta", usuario.getPasswordHash())).thenReturn(true);
+        when(comercioRepository.findById("comercio-1"))
+                .thenReturn(Optional.of(Comercio.builder().id("comercio-1").estado(EstadoComercio.SUSPENDIDO).build()));
+
+        assertThatThrownBy(() -> authService.login(request))
+                .isInstanceOf(UsuarioInactivoException.class);
+
+        verify(jwtService, never()).generarToken(any());
+    }
+
+    @Test
+    void login_conComercioVinculadoActivo_esExitoso() {
+        Usuario usuario = usuarioActivo();
+        usuario.setRol(Rol.COMERCIO);
+        usuario.setRefId("comercio-1");
+        LoginRequest request = new LoginRequest(usuario.getEmail(), "password-correcta");
+
+        when(usuarioRepository.findByEmail(usuario.getEmail())).thenReturn(Optional.of(usuario));
+        when(passwordEncoder.matches("password-correcta", usuario.getPasswordHash())).thenReturn(true);
+        when(comercioRepository.findById("comercio-1"))
+                .thenReturn(Optional.of(Comercio.builder().id("comercio-1").estado(EstadoComercio.ACTIVO).build()));
+        when(jwtService.generarToken(usuario)).thenReturn("access-token");
+        when(jwtService.expiracionEnSegundos()).thenReturn(3600L);
+        when(refreshTokenService.generar(usuario.getId())).thenReturn("refresh-token");
+
+        LoginResponse response = authService.login(request);
+
+        assertThat(response.rol()).isEqualTo(Rol.COMERCIO);
+    }
+
+    @Test
+    void login_conRolAdmin_noConsultaSocioNiComercio() {
+        Usuario usuario = usuarioActivo();
+        usuario.setRol(Rol.ADMIN);
+        usuario.setRefId(null);
+        LoginRequest request = new LoginRequest(usuario.getEmail(), "password-correcta");
+
+        when(usuarioRepository.findByEmail(usuario.getEmail())).thenReturn(Optional.of(usuario));
+        when(passwordEncoder.matches("password-correcta", usuario.getPasswordHash())).thenReturn(true);
+        when(jwtService.generarToken(usuario)).thenReturn("access-token");
+        when(jwtService.expiracionEnSegundos()).thenReturn(3600L);
+        when(refreshTokenService.generar(usuario.getId())).thenReturn("refresh-token");
+
+        LoginResponse response = authService.login(request);
+
+        assertThat(response.rol()).isEqualTo(Rol.ADMIN);
+        verify(socioRepository, never()).findById(any());
+        verify(comercioRepository, never()).findById(any());
     }
 
     // ---------- logout ----------
@@ -301,6 +413,58 @@ class AuthServiceImplTest {
         verify(usuarioRepository).save(usuario);
     }
 
+    // ---------- cambiar password (autenticado) ----------
+
+    @Test
+    void cambiarPassword_exitoso_actualizaPasswordYNotifica() {
+        Usuario usuario = usuarioActivo();
+        when(usuarioRepository.findById(usuario.getId())).thenReturn(Optional.of(usuario));
+        when(passwordEncoder.matches("password-temporal", usuario.getPasswordHash())).thenReturn(true);
+        when(passwordEncoder.matches("NuevaPassword1!", usuario.getPasswordHash())).thenReturn(false);
+        when(passwordEncoder.encode("NuevaPassword1!")).thenReturn("nuevo-hash");
+
+        authService.cambiarPassword(usuario.getId(), "password-temporal", "NuevaPassword1!");
+
+        assertThat(usuario.getPasswordHash()).isEqualTo("nuevo-hash");
+        assertThat(usuario.isRequiereCambioPassword()).isFalse();
+        verify(usuarioRepository).save(usuario);
+        verify(emailService).enviarCorreoPasswordCambiada(usuario.getEmail(), usuario.getNombre());
+    }
+
+    @Test
+    void cambiarPassword_conPasswordActualIncorrecta_lanzaPasswordActualIncorrecta() {
+        Usuario usuario = usuarioActivo();
+        when(usuarioRepository.findById(usuario.getId())).thenReturn(Optional.of(usuario));
+        when(passwordEncoder.matches("password-equivocada", usuario.getPasswordHash())).thenReturn(false);
+
+        assertThatThrownBy(() -> authService.cambiarPassword(usuario.getId(), "password-equivocada", "NuevaPassword1!"))
+                .isInstanceOf(PasswordActualIncorrectaException.class);
+
+        verify(usuarioRepository, never()).save(any());
+        verify(emailService, never()).enviarCorreoPasswordCambiada(anyString(), anyString());
+    }
+
+    @Test
+    void cambiarPassword_conNuevaPasswordIgualALaActual_lanzaPasswordIgual() {
+        Usuario usuario = usuarioActivo();
+        when(usuarioRepository.findById(usuario.getId())).thenReturn(Optional.of(usuario));
+        when(passwordEncoder.matches("password-temporal", usuario.getPasswordHash())).thenReturn(true);
+        when(passwordEncoder.matches("MismaPassword1!", usuario.getPasswordHash())).thenReturn(true);
+
+        assertThatThrownBy(() -> authService.cambiarPassword(usuario.getId(), "password-temporal", "MismaPassword1!"))
+                .isInstanceOf(PasswordIgualException.class);
+
+        verify(usuarioRepository, never()).save(any());
+    }
+
+    @Test
+    void cambiarPassword_conUsuarioInexistente_lanzaCredencialesInvalidas() {
+        when(usuarioRepository.findById("id-borrado")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> authService.cambiarPassword("id-borrado", "cualquiera", "NuevaPassword1!"))
+                .isInstanceOf(CredencialesInvalidasException.class);
+    }
+
     // ---------- refresh token ----------
 
     @Test
@@ -311,6 +475,7 @@ class AuthServiceImplTest {
 
         when(refreshTokenService.rotar("refresh-viejo")).thenReturn(resultado);
         when(usuarioRepository.findById(usuario.getId())).thenReturn(Optional.of(usuario));
+        when(socioRepository.findById("socio-1")).thenReturn(Optional.of(socioActivo()));
         when(jwtService.generarToken(usuario)).thenReturn("nuevo-access-token");
         when(jwtService.expiracionEnSegundos()).thenReturn(3600L);
 
