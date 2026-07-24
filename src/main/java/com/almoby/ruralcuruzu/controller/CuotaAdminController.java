@@ -22,6 +22,7 @@ import com.almoby.ruralcuruzu.dto.response.CuotaResumenResponse;
 import com.almoby.ruralcuruzu.dto.response.EstadoCuentaSocioResponse;
 import com.almoby.ruralcuruzu.dto.response.GeneracionCuotasResponse;
 import com.almoby.ruralcuruzu.dto.response.RegistrarPagoResponse;
+import com.almoby.ruralcuruzu.dto.response.ResumenCuotasResponse;
 import com.almoby.ruralcuruzu.enums.EstadoCuota;
 import com.almoby.ruralcuruzu.exception.ApiErrorResponse;
 import com.almoby.ruralcuruzu.security.AuthenticatedUser;
@@ -76,6 +77,19 @@ public class CuotaAdminController {
         return ResponseEntity.ok(response);
     }
 
+    @Operation(summary = "Ver el historial de generación de cuotas",
+            description = "Documento 10.2, paso 8 (\"registrar la ejecución\"): cada corrida de generación, tanto "
+                    + "automática (cron mensual, el 1º de cada mes) como manual, más recientes primero. Sirve para "
+                    + "confirmar que el cron mensual efectivamente corrió.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Historial obtenido correctamente")
+    })
+    @GetMapping("/ejecuciones")
+    public ResponseEntity<List<GeneracionCuotasResponse>> listarEjecuciones() {
+        log.info("GET /api/admin/cuotas/ejecuciones");
+        return ResponseEntity.ok(cuotaService.listarEjecuciones());
+    }
+
     @Operation(summary = "Listar cuotas", description = "Sin paginación, filtros opcionales combinables por estado, socio y período (yyyy-MM).")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Listado obtenido correctamente")
@@ -87,6 +101,19 @@ public class CuotaAdminController {
             @RequestParam(required = false) String periodo) {
         log.info("GET /api/admin/cuotas - estado={} socioId={} periodo={}", estado, socioId, periodo);
         return ResponseEntity.ok(cuotaService.listarCuotas(estado, socioId, periodo));
+    }
+
+    @Operation(summary = "Ver el resumen de cuotas",
+            description = "Totales para las tarjetas y pestañas del panel: total cobrado, total en revisión, "
+                    + "total cobrado en efectivo, y cantidades por estado (todas, pendientes -incluye vencidas y "
+                    + "en revisión-, aprobadas, rechazadas).")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Resumen calculado correctamente")
+    })
+    @GetMapping("/resumen")
+    public ResponseEntity<ResumenCuotasResponse> obtenerResumen() {
+        log.info("GET /api/admin/cuotas/resumen");
+        return ResponseEntity.ok(cuotaService.obtenerResumen());
     }
 
     @Operation(summary = "Ver el detalle de una cuota")
@@ -114,21 +141,26 @@ public class CuotaAdminController {
     }
 
     @Operation(summary = "Registrar un pago manual",
-            description = "Documento 10.4: puede cubrir una o varias cuotas a la vez. Todas quedan PAGADA con los "
-                    + "mismos datos de pago (fecha, medio, comprobante, observación), se recalcula la deuda del "
-                    + "socio (al consultar su estado de cuenta) y se le manda un correo de confirmación.")
+            description = "Documento 10.4 (ajustado al Figma): se elige un socio y uno o varios períodos "
+                    + "(multi-select de meses, ej. pagar agosto + septiembre + octubre juntos), cada uno con una "
+                    + "cuota ya generada. Todas quedan PAGADA con los mismos datos de pago (fecha, medio, "
+                    + "comprobante, observación); el importe NO se pide en el body, se toma el de cada cuota "
+                    + "(fijado al generarla), para que el admin no pueda registrar un monto que no coincida con lo "
+                    + "adeudado. Se recalcula la deuda del socio (al consultar su estado de cuenta) y se le manda "
+                    + "un correo de confirmación.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Pago registrado correctamente"),
             @ApiResponse(responseCode = "400", description = "Datos inválidos, o alguna cuota no admite un pago en su estado actual",
                     content = @Content(schema = @Schema(implementation = ApiErrorResponse.class))),
-            @ApiResponse(responseCode = "404", description = "Alguna de las cuotas no existe",
+            @ApiResponse(responseCode = "404", description = "No hay una cuota generada para el socio en alguno de los períodos indicados",
                     content = @Content(schema = @Schema(implementation = ApiErrorResponse.class)))
     })
     @PostMapping("/pagos")
     public ResponseEntity<RegistrarPagoResponse> registrarPago(
             @Valid @RequestBody RegistrarPagoCuotaRequest request,
             @AuthenticationPrincipal AuthenticatedUser admin) {
-        log.info("POST /api/admin/cuotas/pagos - cuotaIds={} admin={}", request.cuotaIds(), admin.usuario().getEmail());
+        log.info("POST /api/admin/cuotas/pagos - socioId={} periodos={} admin={}",
+                request.socioId(), request.periodos(), admin.usuario().getEmail());
         return ResponseEntity.ok(cuotaService.registrarPago(request, admin.usuario().getId(), admin.usuario().getNombre()));
     }
 

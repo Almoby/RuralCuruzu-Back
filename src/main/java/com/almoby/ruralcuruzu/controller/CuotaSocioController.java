@@ -61,9 +61,10 @@ public class CuotaSocioController {
     }
 
     @Operation(summary = "Informar el pago de una cuota propia",
-            description = "Autoservicio: el socio adjunta comprobante y datos de un pago que ya hizo (ej. por "
-                    + "transferencia). La cuota pasa a EN_REVISION hasta que un admin la apruebe o rechace. Solo "
-                    + "aplica a cuotas propias en estado PENDIENTE o VENCIDA.")
+            description = "Autoservicio: el socio adjunta comprobante y datos de una transferencia que ya hizo "
+                    + "(único medio válido acá: los pagos en efectivo, débito o presenciales se pagan y registran "
+                    + "directamente en la oficina). La cuota pasa a EN_REVISION hasta que un admin la apruebe o "
+                    + "rechace. Solo aplica a cuotas propias en estado PENDIENTE o VENCIDA.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Pago informado correctamente"),
             @ApiResponse(responseCode = "400", description = "Datos inválidos, o la cuota no admite informar un pago en su estado actual",

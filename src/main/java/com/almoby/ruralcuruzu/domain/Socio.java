@@ -75,10 +75,10 @@ public class Socio {
     @Field("fecha_actualizacion")
     private Instant fechaActualizacion;
 
-    /** Nombre para mostrar: nombre+apellido (física) o razón social (jurídica). */
+    /** Nombre para mostrar: apellido y nombre (física) o razón social (jurídica). */
     public String nombreParaMostrar() {
         if (tipoPersona == TipoPersona.FISICA && datosPersonaFisica != null) {
-            return datosPersonaFisica.getApellido() + ", " + datosPersonaFisica.getNombre();
+            return datosPersonaFisica.getApellidoYNombre();
         }
         if (tipoPersona == TipoPersona.JURIDICA && datosPersonaJuridica != null) {
             return datosPersonaJuridica.getRazonSocial();

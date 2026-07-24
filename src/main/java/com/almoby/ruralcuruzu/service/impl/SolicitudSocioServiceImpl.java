@@ -17,8 +17,6 @@ import com.almoby.ruralcuruzu.domain.SolicitudSocio;
 import com.almoby.ruralcuruzu.enums.EstadoSolicitud;
 import com.almoby.ruralcuruzu.enums.TipoPersona;
 import com.almoby.ruralcuruzu.dto.request.CambiarEstadoSolicitudRequest;
-import com.almoby.ruralcuruzu.dto.request.DatosPersonaFisicaRequest;
-import com.almoby.ruralcuruzu.dto.request.DatosPersonaJuridicaRequest;
 import com.almoby.ruralcuruzu.dto.request.SolicitudSocioRequest;
 import com.almoby.ruralcuruzu.dto.response.CambiarEstadoSolicitudResponse;
 import com.almoby.ruralcuruzu.dto.response.ObservacionAgregadaResponse;
@@ -102,7 +100,7 @@ public class SolicitudSocioServiceImpl implements SolicitudSocioService {
 
     @Override
     public SolicitudSocioCreadaResponse crearSolicitudSocio(SolicitudSocioRequest request) {
-        String email = extraerEmail(request).trim().toLowerCase();
+        String email = request.email().trim().toLowerCase();
         List<String> documentos = extraerDocumentos(request);
 
         validarNoDuplicado(email, documentos);
@@ -115,8 +113,8 @@ public class SolicitudSocioServiceImpl implements SolicitudSocioService {
                 .numeroSolicitud(numeroSolicitud)
                 .categoriaSolicitada(request.categoriaSolicitada())
                 .tipoPersona(request.tipoPersona())
-                .datosPersonaFisica(request.tipoPersona() == TipoPersona.FISICA ? mapear(request.datosPersonaFisica()) : null)
-                .datosPersonaJuridica(request.tipoPersona() == TipoPersona.JURIDICA ? mapear(request.datosPersonaJuridica()) : null)
+                .datosPersonaFisica(request.tipoPersona() == TipoPersona.FISICA ? mapearFisica(request) : null)
+                .datosPersonaJuridica(request.tipoPersona() == TipoPersona.JURIDICA ? mapearJuridica(request) : null)
                 .email(email)
                 .documentos(documentos)
                 .aceptaTerminosYCondiciones(request.aceptaTerminosYCondiciones())
@@ -245,12 +243,6 @@ public class SolicitudSocioServiceImpl implements SolicitudSocioService {
         }
     }
 
-    private String extraerEmail(SolicitudSocioRequest request) {
-        return request.tipoPersona() == TipoPersona.FISICA
-                ? request.datosPersonaFisica().email()
-                : request.datosPersonaJuridica().email();
-    }
-
     /**
      * Persona física aporta DOS documentos identificatorios (DNI y CUIL); persona
      * jurídica, uno solo (CUIT). Hay que chequear duplicados contra los dos del
@@ -259,25 +251,25 @@ public class SolicitudSocioServiceImpl implements SolicitudSocioService {
      */
     private List<String> extraerDocumentos(SolicitudSocioRequest request) {
         if (request.tipoPersona() == TipoPersona.FISICA) {
-            String dni = normalizarDocumento(request.datosPersonaFisica().dni());
-            String cuil = normalizarDocumento(request.datosPersonaFisica().cuitCuil());
+            String dni = normalizarDocumento(request.documento());
+            String cuil = normalizarDocumento(request.cuit());
             return List.of(dni, cuil);
         }
-        return List.of(normalizarDocumento(request.datosPersonaJuridica().cuit()));
+        return List.of(normalizarDocumento(request.cuit()));
     }
 
     private String normalizarDocumento(String valor) {
         return valor.replaceAll("[-.\\s]", "");
     }
 
-    private DatosPersonaFisica mapear(DatosPersonaFisicaRequest r) {
-        return new DatosPersonaFisica(r.nombre(), r.apellido(), r.dni(), r.fechaNacimiento(), r.cuitCuil(),
-                r.direccion(), r.portalPisoDepartamento(), r.telefono(), r.email(), r.ocupacion(), r.nombreEstablecimiento(),
+    private DatosPersonaFisica mapearFisica(SolicitudSocioRequest r) {
+        return new DatosPersonaFisica(r.apellidoYNombre(), r.documento(), r.fechaNacimiento(), r.cuit(),
+                r.direccion(), r.portalPisoDepartamento(), r.telefono(), r.email(), r.nombreEstablecimiento(),
                 r.direccionEstablecimiento());
     }
 
-    private DatosPersonaJuridica mapear(DatosPersonaJuridicaRequest r) {
-        return new DatosPersonaJuridica(r.razonSocial(), r.cuit(), r.direccion(), r.portalPisoDepartamento(),
+    private DatosPersonaJuridica mapearJuridica(SolicitudSocioRequest r) {
+        return new DatosPersonaJuridica(r.apellidoYNombre(), r.cuit(), r.direccion(), r.portalPisoDepartamento(),
                 r.telefono(), r.email(), r.nombreEstablecimiento(), r.nombreResponsable(), r.dniResponsable(),
                 r.direccionEstablecimiento());
     }

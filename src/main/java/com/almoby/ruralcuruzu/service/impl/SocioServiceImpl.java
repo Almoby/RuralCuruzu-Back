@@ -1,6 +1,7 @@
 package com.almoby.ruralcuruzu.service.impl;
 
 import java.time.Instant;
+import java.util.List;
 
 import org.springframework.stereotype.Service;
 
@@ -9,8 +10,11 @@ import com.almoby.ruralcuruzu.domain.DatosPersonaFisica;
 import com.almoby.ruralcuruzu.domain.DatosPersonaJuridica;
 import com.almoby.ruralcuruzu.domain.Socio;
 import com.almoby.ruralcuruzu.domain.SolicitudSocio;
+import com.almoby.ruralcuruzu.dto.response.SocioResponse;
+import com.almoby.ruralcuruzu.dto.response.SocioResumenResponse;
 import com.almoby.ruralcuruzu.enums.EstadoSocio;
 import com.almoby.ruralcuruzu.enums.Rol;
+import com.almoby.ruralcuruzu.exception.SocioNoEncontradoException;
 import com.almoby.ruralcuruzu.repository.SocioRepository;
 import com.almoby.ruralcuruzu.service.CuentaAccesoService;
 import com.almoby.ruralcuruzu.service.EmailService;
@@ -91,14 +95,33 @@ public class SocioServiceImpl implements SocioService {
         return socio;
     }
 
+    @Override
+    public List<SocioResumenResponse> listarSocios(EstadoSocio estado) {
+        List<Socio> socios = estado != null
+                ? socioRepository.findByEstado(estado)
+                : socioRepository.findAll();
+
+        return socios.stream().map(SocioResumenResponse::from).toList();
+    }
+
+    @Override
+    public SocioResponse obtenerSocioPorId(String id) {
+        return SocioResponse.from(buscarOFallar(id));
+    }
+
+    private Socio buscarOFallar(String id) {
+        return socioRepository.findById(id)
+                .orElseThrow(() -> new SocioNoEncontradoException(id));
+    }
+
     private DatosPersonaFisica copiar(DatosPersonaFisica original) {
         if (original == null) {
             return null;
         }
-        return new DatosPersonaFisica(original.getNombre(), original.getApellido(), original.getDni(),
+        return new DatosPersonaFisica(original.getApellidoYNombre(), original.getDni(),
                 original.getFechaNacimiento(), original.getCuitCuil(), original.getDireccion(),
                 original.getPortalPisoDepartamento(), original.getTelefono(), original.getCorreoElectronico(),
-                original.getOcupacion(), original.getNombreEstablecimiento(), original.getDireccionEstablecimiento());
+                original.getNombreEstablecimiento(), original.getDireccionEstablecimiento());
     }
 
     private DatosPersonaJuridica copiar(DatosPersonaJuridica original) {

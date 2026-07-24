@@ -1,6 +1,7 @@
 package com.almoby.ruralcuruzu.service.impl;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -9,6 +10,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.time.LocalDate;
+import java.util.List;
+import java.util.Optional;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -22,12 +25,15 @@ import com.almoby.ruralcuruzu.domain.DatosPersonaFisica;
 import com.almoby.ruralcuruzu.domain.Socio;
 import com.almoby.ruralcuruzu.domain.SolicitudSocio;
 import com.almoby.ruralcuruzu.domain.Usuario;
+import com.almoby.ruralcuruzu.dto.response.SocioResponse;
+import com.almoby.ruralcuruzu.dto.response.SocioResumenResponse;
 import com.almoby.ruralcuruzu.enums.CategoriaSocio;
 import com.almoby.ruralcuruzu.enums.EstadoSocio;
 import com.almoby.ruralcuruzu.enums.EstadoSolicitud;
 import com.almoby.ruralcuruzu.enums.EstadoUsuario;
 import com.almoby.ruralcuruzu.enums.Rol;
 import com.almoby.ruralcuruzu.enums.TipoPersona;
+import com.almoby.ruralcuruzu.exception.SocioNoEncontradoException;
 import com.almoby.ruralcuruzu.repository.SocioRepository;
 import com.almoby.ruralcuruzu.service.CuentaAccesoService;
 import com.almoby.ruralcuruzu.service.EmailService;
@@ -71,8 +77,8 @@ class SocioServiceImplTest {
                 .estado(EstadoSolicitud.APROBADA)
                 .build();
         solicitud.setDatosPersonaFisica(new DatosPersonaFisica(
-                "Juan Carlos", "García", "28345678", LocalDate.of(1985, 4, 12), "20-28345678-2",
-                "Calle 123", "Depto B", "+54 9 3777123456", "juan.garcia@example.com", "Comerciante", null, null));
+                "García, Juan Carlos", "28345678", LocalDate.of(1985, 4, 12), "20-28345678-2",
+                "Calle 123", "Depto B", "+54 9 3777123456", "juan.garcia@example.com", "Farmacia Central", "Ruta 123 km 4"));
         return solicitud;
     }
 
@@ -110,7 +116,7 @@ class SocioServiceImplTest {
 
         // Copia, no la misma instancia: editar el Socio después no debe tocar la solicitud.
         assertThat(socio.getDatosPersonaFisica()).isNotSameAs(solicitud.getDatosPersonaFisica());
-        assertThat(socio.getDatosPersonaFisica().getNombre()).isEqualTo("Juan Carlos");
+        assertThat(socio.getDatosPersonaFisica().getApellidoYNombre()).isEqualTo("García, Juan Carlos");
         assertThat(socio.getDatosPersonaFisica().getCorreoElectronico()).isEqualTo("juan.garcia@example.com");
     }
 
@@ -166,6 +172,66 @@ class SocioServiceImplTest {
 
         verify(emailService).enviarCorreoCredencialesSocio(
                 eq("juan.garcia@example.com"), eq("García, Juan Carlos"), eq("SOC-000042"), eq("PasswordTemp1"));
+    }
+
+    private Socio socioActivo(String id, String numeroSocio, String nombre) {
+        return Socio.builder()
+                .id(id)
+                .numeroSocio(numeroSocio)
+                .categoria(CategoriaSocio.ACTIVO)
+                .tipoPersona(TipoPersona.FISICA)
+                .datosPersonaFisica(new DatosPersonaFisica(
+                        nombre, "28345678", LocalDate.of(1985, 4, 12), "20-28345678-2",
+                        "Calle 123", "Depto B", "+54 9 3777123456", "socio@example.com", "Farmacia Central",
+                        "Ruta 123 km 4"))
+                .estado(EstadoSocio.ACTIVO)
+                .build();
+    }
+
+    @Test
+    void listarSocios_sinFiltro_devuelveTodos() {
+        when(socioRepository.findAll()).thenReturn(List.of(
+                socioActivo("socio-1", "SOC-000001", "García, Juan Carlos"),
+                socioActivo("socio-2", "SOC-000002", "Pérez, Ana")));
+
+        List<SocioResumenResponse> resultado = service.listarSocios(null);
+
+        assertThat(resultado).hasSize(2);
+        assertThat(resultado.get(0).numeroSocio()).isEqualTo("SOC-000001");
+        assertThat(resultado.get(0).nombre()).isEqualTo("García, Juan Carlos");
+        assertThat(resultado.get(1).numeroSocio()).isEqualTo("SOC-000002");
+    }
+
+    @Test
+    void listarSocios_conFiltroDeEstado_delegaEnElRepositorio() {
+        when(socioRepository.findByEstado(EstadoSocio.INACTIVO)).thenReturn(
+                List.of(socioActivo("socio-3", "SOC-000003", "López, Marta")));
+
+        List<SocioResumenResponse> resultado = service.listarSocios(EstadoSocio.INACTIVO);
+
+        assertThat(resultado).hasSize(1);
+        assertThat(resultado.get(0).numeroSocio()).isEqualTo("SOC-000003");
+    }
+
+    @Test
+    void obtenerSocioPorId_existente_devuelveElDetalle() {
+        when(socioRepository.findById("socio-1")).thenReturn(
+                Optional.of(socioActivo("socio-1", "SOC-000001", "García, Juan Carlos")));
+
+        SocioResponse resultado = service.obtenerSocioPorId("socio-1");
+
+        assertThat(resultado.id()).isEqualTo("socio-1");
+        assertThat(resultado.numeroSocio()).isEqualTo("SOC-000001");
+        assertThat(resultado.nombre()).isEqualTo("García, Juan Carlos");
+        assertThat(resultado.categoria()).isEqualTo(CategoriaSocio.ACTIVO);
+    }
+
+    @Test
+    void obtenerSocioPorId_inexistente_lanzaExcepcion() {
+        when(socioRepository.findById("no-existe")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.obtenerSocioPorId("no-existe"))
+                .isInstanceOf(SocioNoEncontradoException.class);
     }
 
     private void doAnswerAsignarIdSocio() {

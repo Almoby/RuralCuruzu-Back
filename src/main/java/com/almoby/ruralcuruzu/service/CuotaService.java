@@ -12,6 +12,7 @@ import com.almoby.ruralcuruzu.dto.response.EstadoCuentaSocioResponse;
 import com.almoby.ruralcuruzu.dto.response.GeneracionCuotasResponse;
 import com.almoby.ruralcuruzu.dto.response.InformarPagoResponse;
 import com.almoby.ruralcuruzu.dto.response.RegistrarPagoResponse;
+import com.almoby.ruralcuruzu.dto.response.ResumenCuotasResponse;
 import com.almoby.ruralcuruzu.enums.EstadoCuota;
 
 /** Ver documento, sección 10 ("Gestión de cuotas"). */
@@ -23,6 +24,9 @@ public interface CuotaService {
      * dispara un admin manualmente (documento 10.2).
      */
     GeneracionCuotasResponse generarCuotas(String periodo, String adminId, String adminNombre);
+
+    /** Historial de corridas de generación (documento 10.2, paso 8), más recientes primero. */
+    List<GeneracionCuotasResponse> listarEjecuciones();
 
     List<CuotaResumenResponse> listarCuotas(EstadoCuota estado, String socioId, String periodo);
 
@@ -43,4 +47,7 @@ public interface CuotaService {
     EstadoCuentaSocioResponse obtenerEstadoCuentaSocio(String socioId);
 
     List<CuotaResumenResponse> listarCuotasDeSocio(String socioId);
+
+    /** Totales para las tarjetas y pestañas del panel de Gestión de Cuotas (Figma). */
+    ResumenCuotasResponse obtenerResumen();
 }

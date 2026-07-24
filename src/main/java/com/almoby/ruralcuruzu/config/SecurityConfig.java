@@ -86,8 +86,9 @@ public class SecurityConfig {
                         .requestMatchers(RUTAS_PUBLICAS).permitAll()
                         .requestMatchers(RutasApi.ADMIN_SOLICITUDES_SOCIO).hasRole("ADMIN")
                         .requestMatchers(RutasApi.ADMIN_COMERCIOS).hasRole("ADMIN")
-                        .requestMatchers(RutasApi.ADMIN_TIPOS_CUOTA).hasRole("ADMIN")
                         .requestMatchers(RutasApi.ADMIN_CUOTAS).hasRole("ADMIN")
+                        .requestMatchers(RutasApi.ADMIN_REGLAS_CUOTA).hasRole("ADMIN")
+                        .requestMatchers(RutasApi.ADMIN_SOCIOS).hasRole("ADMIN")
                         .requestMatchers(RutasApi.SOCIO_CUOTAS).hasRole("SOCIO")
                         .anyRequest().authenticated())
                 .exceptionHandling(handling -> handling

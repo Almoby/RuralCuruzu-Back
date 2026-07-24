@@ -20,10 +20,13 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 /**
- * Cuota mensual de un socio (documento, sección 10). Los datos del socio y
- * del tipo de cuota se denormalizan (numeroSocio, nombre, tipoCuotaNombre)
- * para no tener que resolverlos en cada listado, igual que en otros módulos
- * de este proyecto (ej. Socio copia los datos de la SolicitudSocio).
+ * Cuota mensual de un socio (documento, sección 10). Los datos del socio se
+ * denormalizan (numeroSocio, nombre) para no tener que resolverlos en cada
+ * listado, igual que en otros módulos de este proyecto (ej. Socio copia los
+ * datos de la SolicitudSocio). tipoCuotaNombre es una etiqueta descriptiva
+ * (ej. "Cuota de socio activo"), tomada de {@link com.almoby.ruralcuruzu.domain.ReglaCuota}
+ * al generar la cuota: es una copia de texto, no una referencia viva a esa regla
+ * (si después se cambia el nombre de la regla, las cuotas ya generadas no se alteran).
  *
  * El índice compuesto único (socioId + periodo) evita, a nivel de base, que
  * la generación mensual cree dos cuotas para el mismo socio en el mismo mes
@@ -51,9 +54,6 @@ public class Cuota {
 
     @Field("socio_nombre")
     private String socioNombre;
-
-    @Field("tipo_cuota_id")
-    private String tipoCuotaId;
 
     @Field("tipo_cuota_nombre")
     private String tipoCuotaNombre;

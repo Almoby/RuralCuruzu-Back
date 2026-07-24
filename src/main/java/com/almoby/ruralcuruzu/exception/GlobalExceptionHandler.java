@@ -154,10 +154,10 @@ public class GlobalExceptionHandler {
         return responder(HttpStatus.NOT_FOUND, ex.getMessage(), request);
     }
 
-    @ExceptionHandler(TipoCuotaNoEncontradoException.class)
-    public ResponseEntity<ApiErrorResponse> handleTipoCuotaNoEncontrado(TipoCuotaNoEncontradoException ex,
+    @ExceptionHandler(ReglaCuotaNoEncontradaException.class)
+    public ResponseEntity<ApiErrorResponse> handleReglaCuotaNoEncontrada(ReglaCuotaNoEncontradaException ex,
                                                                           HttpServletRequest request) {
-        log.warn("Tipo de cuota no encontrado [{}]: {}", request.getRequestURI(), ex.getMessage());
+        log.warn("Regla de cuota no encontrada [{}]: {}", request.getRequestURI(), ex.getMessage());
         return responder(HttpStatus.NOT_FOUND, ex.getMessage(), request);
     }
 

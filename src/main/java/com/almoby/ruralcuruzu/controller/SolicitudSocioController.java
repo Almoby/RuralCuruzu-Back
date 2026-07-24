@@ -57,8 +57,8 @@ public class SolicitudSocioController {
             description = "Ruta pública (botón 'Quiero ser socio' en la pantalla inicial). Crea la solicitud en "
                     + "estado PENDIENTE, genera un número de solicitud y envía un correo de confirmación. "
                     + "Todavía NO crea ninguna cuenta de usuario: eso ocurre recién si un admin la aprueba. "
-                    + "Exactamente uno de `datosPersonaFisica` / `datosPersonaJuridica` debe venir completo, "
-                    + "según `tipoPersona`.")
+                    + "Formulario único (sin sub-objetos anidados): `documento`/`fechaNacimiento` solo aplican "
+                    + "si `tipoPersona` es FISICA, y `nombreResponsable`/`dniResponsable` solo si es JURIDICA.")
     @ApiResponses({
             @ApiResponse(responseCode = "201", description = "Solicitud creada, devuelve el número de solicitud"),
             @ApiResponse(responseCode = "400", description = "Datos inválidos, email/DNI/CUIT ya registrado, "

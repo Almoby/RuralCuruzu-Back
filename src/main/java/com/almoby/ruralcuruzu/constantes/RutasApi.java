@@ -16,12 +16,14 @@ public final class RutasApi {
     public static final String ADMIN_SOLICITUDES_SOCIO = ADMIN_SOLICITUDES_SOCIO_BASE + "/**";
     public static final String ADMIN_COMERCIOS_BASE = "/api/admin/comercios";
     public static final String ADMIN_COMERCIOS = ADMIN_COMERCIOS_BASE + "/**";
-    public static final String ADMIN_TIPOS_CUOTA_BASE = "/api/admin/tipos-cuota";
-    public static final String ADMIN_TIPOS_CUOTA = ADMIN_TIPOS_CUOTA_BASE + "/**";
     public static final String ADMIN_CUOTAS_BASE = "/api/admin/cuotas";
     public static final String ADMIN_CUOTAS = ADMIN_CUOTAS_BASE + "/**";
+    public static final String ADMIN_REGLAS_CUOTA_BASE = "/api/admin/reglas-cuota";
+    public static final String ADMIN_REGLAS_CUOTA = ADMIN_REGLAS_CUOTA_BASE + "/**";
     public static final String SOCIO_CUOTAS_BASE = "/api/socio/cuotas";
     public static final String SOCIO_CUOTAS = SOCIO_CUOTAS_BASE + "/**";
+    public static final String ADMIN_SOCIOS_BASE = "/api/admin/socios";
+    public static final String ADMIN_SOCIOS = ADMIN_SOCIOS_BASE + "/**";
 
     public static final String SWAGGER_UI_HTML = "/swagger-ui.html";
     public static final String SWAGGER_UI = "/swagger-ui/**";

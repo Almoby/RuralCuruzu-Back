@@ -13,6 +13,12 @@ import lombok.Setter;
  * Datos propios de una solicitud hecha por una persona física
  * (documento 5.2). Se guarda embebido dentro de {@link SolicitudSocio};
  * solo existe cuando {@code tipoPersona == FISICA}.
+ *
+ * {@code apellidoYNombre} es un solo campo de texto libre (ej. "García, Juan
+ * Carlos"), no nombre y apellido por separado; y {@code nombreEstablecimiento}
+ * cubre tanto el nombre de un establecimiento propio como una ocupación (ej.
+ * "Comerciante") en un solo campo. Así lo pide el Figma del formulario
+ * "Quiero ser socio".
  */
 @Getter
 @Setter
@@ -20,11 +26,8 @@ import lombok.Setter;
 @AllArgsConstructor
 public class DatosPersonaFisica {
 
-    @Field("nombre")
-    private String nombre;
-
-    @Field("apellido")
-    private String apellido;
+    @Field("apellido_y_nombre")
+    private String apellidoYNombre;
 
     @Field("dni")
     private String dni;
@@ -46,9 +49,6 @@ public class DatosPersonaFisica {
 
     @Field("correo_electronico")
     private String correoElectronico;
-
-    @Field("ocupacion")
-    private String ocupacion;
 
     @Field("nombre_establecimiento")
     private String nombreEstablecimiento;

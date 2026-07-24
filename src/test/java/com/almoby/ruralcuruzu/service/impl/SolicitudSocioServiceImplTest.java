@@ -24,8 +24,6 @@ import com.almoby.ruralcuruzu.enums.CategoriaSocio;
 import com.almoby.ruralcuruzu.enums.EstadoSolicitud;
 import com.almoby.ruralcuruzu.enums.TipoPersona;
 import com.almoby.ruralcuruzu.dto.request.CambiarEstadoSolicitudRequest;
-import com.almoby.ruralcuruzu.dto.request.DatosPersonaFisicaRequest;
-import com.almoby.ruralcuruzu.dto.request.DatosPersonaJuridicaRequest;
 import com.almoby.ruralcuruzu.dto.request.SolicitudSocioRequest;
 import com.almoby.ruralcuruzu.dto.response.CambiarEstadoSolicitudResponse;
 import com.almoby.ruralcuruzu.dto.response.ObservacionAgregadaResponse;
@@ -66,24 +64,25 @@ class SolicitudSocioServiceImplTest {
         service = new SolicitudSocioServiceImpl(solicitudSocioRepository, usuarioRepository, secuenciaService, emailService, socioService);
     }
 
-    private DatosPersonaFisicaRequest datosFisicaValidos() {
-        return new DatosPersonaFisicaRequest(
-                "Juan Carlos", "García", "28345678", LocalDate.of(1985, 4, 12),
-                "20-28345678-2", "Calle 123", "Depto B", "+54 9 3777123456",
-                "juan.garcia@example.com", "Comerciante", null, null);
+    private SolicitudSocioRequest requestFisicaValida() {
+        return new SolicitudSocioRequest(
+                CategoriaSocio.ACTIVO, TipoPersona.FISICA, "García, Juan Carlos", "28345678",
+                "20-28345678-2", LocalDate.of(1985, 4, 12), "Calle 123", "Depto B",
+                "+54 9 3777123456", "juan.garcia@example.com", "Farmacia Central", "Ruta 123 km 4",
+                null, null, true);
     }
 
-    private DatosPersonaJuridicaRequest datosJuridicaValidos() {
-        return new DatosPersonaJuridicaRequest(
-                "Agropecuaria Curuzú S.A.", "30-71234567-8", "Ruta 123", null,
-                "+54 9 3777123456", "contacto@agropecuaria.com", "Agropecuaria Curuzú",
-                "María Fernández", "30123456", null);
+    private SolicitudSocioRequest requestJuridicaValida() {
+        return new SolicitudSocioRequest(
+                CategoriaSocio.ADHERENTE, TipoPersona.JURIDICA, "Agropecuaria Curuzú S.A.", null,
+                "30-71234567-8", null, "Ruta 123", null,
+                "+54 9 3777123456", "contacto@agropecuaria.com", "Agropecuaria Curuzú", "Ruta 123 km 4",
+                "María Fernández", "30123456", true);
     }
 
     @Test
     void crear_conPersonaFisica_guardaLaSolicitudPendienteYMandaConfirmacion() {
-        SolicitudSocioRequest request = new SolicitudSocioRequest(
-                CategoriaSocio.ACTIVO, TipoPersona.FISICA, datosFisicaValidos(), null, true);
+        SolicitudSocioRequest request = requestFisicaValida();
 
         when(usuarioRepository.existsByEmail(anyString())).thenReturn(false);
         when(solicitudSocioRepository.existsByEmailIgnoreCaseAndEstadoIn(anyString(), any())).thenReturn(false);
@@ -104,8 +103,7 @@ class SolicitudSocioServiceImplTest {
 
     @Test
     void crear_conPersonaJuridica_guardaLaSolicitudPendiente() {
-        SolicitudSocioRequest request = new SolicitudSocioRequest(
-                CategoriaSocio.ADHERENTE, TipoPersona.JURIDICA, null, datosJuridicaValidos(), true);
+        SolicitudSocioRequest request = requestJuridicaValida();
 
         when(usuarioRepository.existsByEmail(anyString())).thenReturn(false);
         when(solicitudSocioRepository.existsByEmailIgnoreCaseAndEstadoIn(anyString(), any())).thenReturn(false);
@@ -121,8 +119,7 @@ class SolicitudSocioServiceImplTest {
 
     @Test
     void crear_conEmailYaRegistradoComoUsuario_lanzaExcepcion() {
-        SolicitudSocioRequest request = new SolicitudSocioRequest(
-                CategoriaSocio.ACTIVO, TipoPersona.FISICA, datosFisicaValidos(), null, true);
+        SolicitudSocioRequest request = requestFisicaValida();
 
         when(usuarioRepository.existsByEmail(anyString())).thenReturn(true);
 
@@ -132,8 +129,7 @@ class SolicitudSocioServiceImplTest {
 
     @Test
     void crear_conDocumentoYaRegistradoEnOtraSolicitud_lanzaExcepcion() {
-        SolicitudSocioRequest request = new SolicitudSocioRequest(
-                CategoriaSocio.ACTIVO, TipoPersona.FISICA, datosFisicaValidos(), null, true);
+        SolicitudSocioRequest request = requestFisicaValida();
 
         when(usuarioRepository.existsByEmail(anyString())).thenReturn(false);
         when(solicitudSocioRepository.existsByEmailIgnoreCaseAndEstadoIn(anyString(), any())).thenReturn(false);
@@ -367,8 +363,8 @@ class SolicitudSocioServiceImplTest {
                 .estado(EstadoSolicitud.PENDIENTE)
                 .build();
         solicitud.setDatosPersonaFisica(new com.almoby.ruralcuruzu.domain.DatosPersonaFisica(
-                "Juan Carlos", "García", "28345678", LocalDate.of(1985, 4, 12), "20-28345678-2",
-                "Calle 123", "Depto B", "+54 9 3777123456", "juan.garcia@example.com", "Comerciante", null, null));
+                "García, Juan Carlos", "28345678", LocalDate.of(1985, 4, 12), "20-28345678-2",
+                "Calle 123", "Depto B", "+54 9 3777123456", "juan.garcia@example.com", null, null));
         return solicitud;
     }
 }

@@ -9,6 +9,7 @@ import java.util.EnumSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Predicate;
 
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -16,8 +17,8 @@ import org.springframework.stereotype.Service;
 import com.almoby.ruralcuruzu.domain.Cuota;
 import com.almoby.ruralcuruzu.domain.DatosPago;
 import com.almoby.ruralcuruzu.domain.EjecucionGeneracionCuotas;
+import com.almoby.ruralcuruzu.domain.ReglaCuota;
 import com.almoby.ruralcuruzu.domain.Socio;
-import com.almoby.ruralcuruzu.domain.TipoCuota;
 import com.almoby.ruralcuruzu.dto.request.AnularCuotaRequest;
 import com.almoby.ruralcuruzu.dto.request.InformarPagoCuotaRequest;
 import com.almoby.ruralcuruzu.dto.request.RegistrarPagoCuotaRequest;
@@ -28,17 +29,18 @@ import com.almoby.ruralcuruzu.dto.response.EstadoCuentaSocioResponse;
 import com.almoby.ruralcuruzu.dto.response.GeneracionCuotasResponse;
 import com.almoby.ruralcuruzu.dto.response.InformarPagoResponse;
 import com.almoby.ruralcuruzu.dto.response.RegistrarPagoResponse;
+import com.almoby.ruralcuruzu.dto.response.ResumenCuotasResponse;
 import com.almoby.ruralcuruzu.enums.EstadoCuota;
 import com.almoby.ruralcuruzu.enums.EstadoSocio;
-import com.almoby.ruralcuruzu.enums.EstadoTipoCuota;
+import com.almoby.ruralcuruzu.enums.MedioPago;
 import com.almoby.ruralcuruzu.enums.OrigenEjecucionCuotas;
 import com.almoby.ruralcuruzu.exception.CuotaEstadoInvalidoException;
 import com.almoby.ruralcuruzu.exception.CuotaNoEncontradaException;
 import com.almoby.ruralcuruzu.exception.SocioNoEncontradoException;
 import com.almoby.ruralcuruzu.repository.CuotaRepository;
 import com.almoby.ruralcuruzu.repository.EjecucionGeneracionCuotasRepository;
+import com.almoby.ruralcuruzu.repository.ReglaCuotaRepository;
 import com.almoby.ruralcuruzu.repository.SocioRepository;
-import com.almoby.ruralcuruzu.repository.TipoCuotaRepository;
 import com.almoby.ruralcuruzu.service.CuotaService;
 import com.almoby.ruralcuruzu.service.EmailService;
 
@@ -50,13 +52,25 @@ import lombok.extern.slf4j.Slf4j;
  *   mensual (generarCuotasMensualAutomatico) como si la dispara un admin a
  *   mano (CuotaService.generarCuotas con adminId != null): no se duplica código,
  *   solo cambia el origen que queda registrado en EjecucionGeneracionCuotas.
- * - Si un socio activo no tiene ningún TipoCuota vigente para su categoría, se
- *   lo omite (no se aborta toda la corrida) y queda contado en
- *   cantidadSociosOmitidos para que el admin lo note.
+ * - El importe y el día de vencimiento por categoría viven en la colección
+ *   {@link ReglaCuota} (reglas_cuota), administrada desde el panel de admin
+ *   (ReglaCuotaAdminController). Si un socio activo tiene una categoría sin
+ *   regla cargada todavía, se lo omite (no se aborta toda la corrida) y
+ *   queda contado en cantidadSociosOmitidos para que el admin lo note.
  * - El informe de pago del socio (autoservicio) pasa directo a EN_REVISION:
  *   INFORMADA queda reservado en el enum pero no se usa como estado de reposo
  *   real en este flujo (no hay, por ahora, un paso manual separado entre
  *   "informado" y "en revisión").
+ * - Por qué un registro manual del admin (registrarPago) siempre queda PAGADA
+ *   al toque, sin importar el medio, mientras que informarPago siempre
+ *   necesita revisión: la diferencia no es el medio de pago, es el canal.
+ *   Si el socio paga presencialmente en la oficina ("ventanilla": efectivo,
+ *   débito o incluso una transferencia hecha ahí mismo), es el admin quien
+ *   cobra y registra el pago directamente, no hace falta confirmar nada.
+ *   Si en cambio el socio paga a distancia (transferencia + comprobante
+ *   subido desde el sistema), nadie del lado del club vio ese pago todavía,
+ *   así que sí o sí pasa por revisión. Por eso informarPago solo acepta
+ *   MedioPago.TRANSFERENCIA: es la única forma de pagar a distancia.
  * - VENCIDA se aplica con un job diario (marcarCuotasVencidas), no al vuelo.
  */
 @Slf4j
@@ -67,21 +81,21 @@ public class CuotaServiceImpl implements CuotaService {
             EnumSet.of(EstadoCuota.PENDIENTE, EstadoCuota.VENCIDA, EstadoCuota.EN_REVISION);
 
     private final CuotaRepository cuotaRepository;
-    private final TipoCuotaRepository tipoCuotaRepository;
     private final EjecucionGeneracionCuotasRepository ejecucionRepository;
     private final SocioRepository socioRepository;
     private final EmailService emailService;
+    private final ReglaCuotaRepository reglaCuotaRepository;
 
     public CuotaServiceImpl(CuotaRepository cuotaRepository,
-                             TipoCuotaRepository tipoCuotaRepository,
                              EjecucionGeneracionCuotasRepository ejecucionRepository,
                              SocioRepository socioRepository,
-                             EmailService emailService) {
+                             EmailService emailService,
+                             ReglaCuotaRepository reglaCuotaRepository) {
         this.cuotaRepository = cuotaRepository;
-        this.tipoCuotaRepository = tipoCuotaRepository;
         this.ejecucionRepository = ejecucionRepository;
         this.socioRepository = socioRepository;
         this.emailService = emailService;
+        this.reglaCuotaRepository = reglaCuotaRepository;
     }
 
     /** Cron mensual: 1º de cada mes a las 6 AM (documento 10.2: "el sistema deberá generar automáticamente"). */
@@ -123,18 +137,16 @@ public class CuotaServiceImpl implements CuotaService {
                 continue;
             }
 
-            Optional<TipoCuota> tipoCuota = tipoCuotaRepository
-                    .findFirstByCategoriaAplicableAndEstadoAndFechaVigenciaLessThanEqualOrderByFechaVigenciaDesc(
-                            socio.getCategoria(), EstadoTipoCuota.ACTIVO, LocalDate.now());
+            Optional<ReglaCuota> regla = reglaCuotaRepository.findByCategoriaAplicable(socio.getCategoria());
 
-            if (tipoCuota.isEmpty()) {
-                log.warn("No hay un tipo de cuota vigente para categoria={}: se omite socio id={}",
+            if (regla.isEmpty()) {
+                log.warn("No hay una regla de cuota configurada para categoria={}: se omite socio id={}",
                         socio.getCategoria(), socio.getId());
                 omitidos++;
                 continue;
             }
 
-            Cuota cuota = crearCuotaPendiente(socio, tipoCuota.get(), periodo, periodoStr);
+            Cuota cuota = crearCuotaPendiente(socio, regla.get(), periodo, periodoStr);
             cuotaRepository.save(cuota);
             generadas++;
 
@@ -163,24 +175,30 @@ public class CuotaServiceImpl implements CuotaService {
         return GeneracionCuotasResponse.from(ejecucion);
     }
 
-    private Cuota crearCuotaPendiente(Socio socio, TipoCuota tipoCuota, YearMonth periodo, String periodoStr) {
-        int diaVencimiento = Math.min(tipoCuota.getDiaVencimiento(), periodo.lengthOfMonth());
+    private Cuota crearCuotaPendiente(Socio socio, ReglaCuota regla, YearMonth periodo, String periodoStr) {
+        int diaVencimiento = Math.min(regla.getDiaVencimiento(), periodo.lengthOfMonth());
         Instant ahora = Instant.now();
 
         return Cuota.builder()
                 .socioId(socio.getId())
                 .socioNumeroSocio(socio.getNumeroSocio())
                 .socioNombre(socio.nombreParaMostrar())
-                .tipoCuotaId(tipoCuota.getId())
-                .tipoCuotaNombre(tipoCuota.getNombre())
+                .tipoCuotaNombre(regla.getNombre())
                 .categoria(socio.getCategoria())
                 .periodo(periodoStr)
-                .importe(tipoCuota.getImporte())
+                .importe(regla.getImporte())
                 .fechaVencimiento(periodo.atDay(diaVencimiento))
                 .estado(EstadoCuota.PENDIENTE)
                 .fechaGeneracion(ahora)
                 .fechaActualizacion(ahora)
                 .build();
+    }
+
+    @Override
+    public List<GeneracionCuotasResponse> listarEjecuciones() {
+        return ejecucionRepository.findAllByOrderByFechaEjecucionDesc().stream()
+                .map(GeneracionCuotasResponse::from)
+                .toList();
     }
 
     @Override
@@ -208,20 +226,62 @@ public class CuotaServiceImpl implements CuotaService {
     }
 
     @Override
+    public ResumenCuotasResponse obtenerResumen() {
+        List<Cuota> todas = cuotaRepository.findAll();
+
+        BigDecimal totalCobrado = sumaPagada(todas, cuota -> true);
+        BigDecimal totalCobradoEnEfectivo = sumaPagada(todas,
+                cuota -> cuota.getDatosPago() != null && cuota.getDatosPago().getMedioPago() == MedioPago.EFECTIVO);
+        BigDecimal totalEnRevision = todas.stream()
+                .filter(cuota -> cuota.getEstado() == EstadoCuota.EN_REVISION)
+                .map(Cuota::getImporte)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        long cantidadPendientes = todas.stream().filter(this::cuentaComoPendiente).count();
+        long cantidadAprobadas = todas.stream().filter(cuota -> cuota.getEstado() == EstadoCuota.PAGADA).count();
+        long cantidadRechazadas = todas.stream().filter(cuota -> cuota.getEstado() == EstadoCuota.RECHAZADA).count();
+
+        return new ResumenCuotasResponse(totalCobrado, totalEnRevision, totalCobradoEnEfectivo,
+                todas.size(), cantidadPendientes, cantidadAprobadas, cantidadRechazadas);
+    }
+
+    /** "Pendientes" agrupa todo lo que todavía no se resolvió: recién generada, vencida o esperando revisión. */
+    private boolean cuentaComoPendiente(Cuota cuota) {
+        return cuota.getEstado() == EstadoCuota.PENDIENTE
+                || cuota.getEstado() == EstadoCuota.VENCIDA
+                || cuota.getEstado() == EstadoCuota.EN_REVISION;
+    }
+
+    /** Suma el importe efectivamente pagado (datosPago.importe) de las cuotas PAGADA que cumplan el filtro. */
+    private BigDecimal sumaPagada(List<Cuota> cuotas, Predicate<Cuota> filtroAdicional) {
+        return cuotas.stream()
+                .filter(cuota -> cuota.getEstado() == EstadoCuota.PAGADA)
+                .filter(filtroAdicional)
+                .map(cuota -> cuota.getDatosPago() != null ? cuota.getDatosPago().getImporte() : cuota.getImporte())
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    @Override
     public CuotaResponse obtenerCuotaPorId(String id) {
         return CuotaResponse.from(buscarOFallar(id));
     }
 
     @Override
     public RegistrarPagoResponse registrarPago(RegistrarPagoCuotaRequest request, String adminId, String adminNombre) {
-        List<Cuota> cuotas = request.cuotaIds().stream().map(this::buscarOFallar).toList();
+        List<Cuota> cuotas = request.periodos().stream()
+                .map(periodo -> buscarCuotaDeSocioEnPeriodo(request.socioId(), periodo))
+                .toList();
 
         for (Cuota cuota : cuotas) {
             validarPuedeRegistrarPago(cuota);
 
+            // El importe pagado es el de la propia cuota (fijado al generarla, según la
+            // regla de cuota vigente para su categoría en ese momento), no un valor que
+            // tipee el admin: así no se puede registrar un pago por un monto que no
+            // coincida con lo adeudado.
             DatosPago datosPago = DatosPago.builder()
                     .fechaPago(request.fecha().atStartOfDay(ZoneOffset.UTC).toInstant())
-                    .importe(request.importe())
+                    .importe(cuota.getImporte())
                     .medioPago(request.medioPago())
                     .comprobante(request.comprobante())
                     .observacion(request.observacion())
@@ -250,6 +310,16 @@ public class CuotaServiceImpl implements CuotaService {
         if (!cuota.getSocioId().equals(socioId)) {
             // No revelamos que la cuota existe pero pertenece a otro socio.
             throw new CuotaNoEncontradaException(cuotaId);
+        }
+
+        if (request.medioPago() != MedioPago.TRANSFERENCIA) {
+            // La única forma de pagar a distancia es transferencia + comprobante;
+            // efectivo, débito y "ventanilla" implican pagar en persona en la
+            // oficina, donde es el admin quien registra el pago directamente
+            // (CuotaServiceImpl.registrarPago), sin pasar por esta revisión.
+            throw new CuotaEstadoInvalidoException(
+                    "Solo se puede informar un pago por transferencia; los demás medios se pagan y "
+                            + "registran presencialmente en la oficina");
         }
 
         if (cuota.getEstado() != EstadoCuota.PENDIENTE && cuota.getEstado() != EstadoCuota.VENCIDA) {
@@ -374,5 +444,10 @@ public class CuotaServiceImpl implements CuotaService {
 
     private Cuota buscarOFallar(String id) {
         return cuotaRepository.findById(id).orElseThrow(() -> new CuotaNoEncontradaException(id));
+    }
+
+    private Cuota buscarCuotaDeSocioEnPeriodo(String socioId, String periodo) {
+        return cuotaRepository.findBySocioIdAndPeriodo(socioId, periodo)
+                .orElseThrow(() -> CuotaNoEncontradaException.paraSocioYPeriodo(socioId, periodo));
     }
 }

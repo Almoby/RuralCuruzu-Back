@@ -9,9 +9,9 @@ import jakarta.validation.Constraint;
 import jakarta.validation.Payload;
 
 /**
- * Valida que la solicitud traiga el sub-bloque de datos correcto según
- * tipoPersona: datosPersonaFisica cuando es FISICA, datosPersonaJuridica
- * cuando es JURIDICA, y no el otro (documento 5.2).
+ * Valida que la solicitud traiga los campos correctos según tipoPersona:
+ * documento + fechaNacimiento cuando es FISICA, nombreResponsable +
+ * dniResponsable cuando es JURIDICA, y no los del otro tipo (documento 5.2).
  */
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
