@@ -182,6 +182,34 @@ public class GlobalExceptionHandler {
         return responder(HttpStatus.NOT_FOUND, ex.getMessage(), request);
     }
 
+    @ExceptionHandler(BeneficioNoEncontradoException.class)
+    public ResponseEntity<ApiErrorResponse> handleBeneficioNoEncontrado(BeneficioNoEncontradoException ex,
+                                                                          HttpServletRequest request) {
+        log.warn("Beneficio no encontrado [{}]: {}", request.getRequestURI(), ex.getMessage());
+        return responder(HttpStatus.NOT_FOUND, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(BeneficioNoVigenteException.class)
+    public ResponseEntity<ApiErrorResponse> handleBeneficioNoVigente(BeneficioNoVigenteException ex,
+                                                                       HttpServletRequest request) {
+        log.warn("Beneficio no vigente [{}]: {}", request.getRequestURI(), ex.getMessage());
+        return responder(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(CodigoQrInvalidoException.class)
+    public ResponseEntity<ApiErrorResponse> handleCodigoQrInvalido(CodigoQrInvalidoException ex,
+                                                                     HttpServletRequest request) {
+        log.warn("Código QR inválido [{}]: {}", request.getRequestURI(), ex.getMessage());
+        return responder(HttpStatus.NOT_FOUND, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(BeneficioYaCanjeadoException.class)
+    public ResponseEntity<ApiErrorResponse> handleBeneficioYaCanjeado(BeneficioYaCanjeadoException ex,
+                                                                        HttpServletRequest request) {
+        log.warn("Beneficio ya canjeado [{}]: {}", request.getRequestURI(), ex.getMessage());
+        return responder(HttpStatus.CONFLICT, ex.getMessage(), request);
+    }
+
     @ExceptionHandler(AccessDeniedException.class)
     public ResponseEntity<ApiErrorResponse> handleAccessDenied(AccessDeniedException ex,
                                                                 HttpServletRequest request) {

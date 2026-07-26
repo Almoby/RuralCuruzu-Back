@@ -14,6 +14,9 @@ public interface SocioRepository extends MongoRepository<Socio, String> {
 
     Optional<Socio> findByUsuarioId(String usuarioId);
 
+    /** Usado por el comercio al escanear el QR de un socio (módulo Beneficios). */
+    Optional<Socio> findByCodigoQr(String codigoQr);
+
     /** Usado por la generación de cuotas (documento 10.2, paso 1: "identificar socios activos"). */
     List<Socio> findByEstado(EstadoSocio estado);
 }

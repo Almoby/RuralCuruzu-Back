@@ -2,6 +2,7 @@ package com.almoby.ruralcuruzu.service.impl;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.UUID;
 
 import org.springframework.stereotype.Service;
 
@@ -10,6 +11,7 @@ import com.almoby.ruralcuruzu.domain.DatosPersonaFisica;
 import com.almoby.ruralcuruzu.domain.DatosPersonaJuridica;
 import com.almoby.ruralcuruzu.domain.Socio;
 import com.almoby.ruralcuruzu.domain.SolicitudSocio;
+import com.almoby.ruralcuruzu.dto.response.MiQrResponse;
 import com.almoby.ruralcuruzu.dto.response.SocioResponse;
 import com.almoby.ruralcuruzu.dto.response.SocioResumenResponse;
 import com.almoby.ruralcuruzu.enums.EstadoSocio;
@@ -69,6 +71,7 @@ public class SocioServiceImpl implements SocioService {
                 .datosPersonaFisica(copiar(solicitud.getDatosPersonaFisica()))
                 .datosPersonaJuridica(copiar(solicitud.getDatosPersonaJuridica()))
                 .estado(EstadoSocio.ACTIVO)
+                .codigoQr(UUID.randomUUID().toString())
                 .numeroSolicitudOrigen(solicitud.getNumeroSolicitud())
                 .adminResponsableAltaId(adminId)
                 .adminResponsableAltaNombre(adminNombre)
@@ -107,6 +110,19 @@ public class SocioServiceImpl implements SocioService {
     @Override
     public SocioResponse obtenerSocioPorId(String id) {
         return SocioResponse.from(buscarOFallar(id));
+    }
+
+    @Override
+    public MiQrResponse obtenerMiQr(String socioId) {
+        Socio socio = buscarOFallar(socioId);
+        // Socios creados antes de agregar este campo no lo tienen en Mongo (llega
+        // null): se genera y persiste una única vez, de forma transparente.
+        if (socio.getCodigoQr() == null) {
+            socio.setCodigoQr(UUID.randomUUID().toString());
+            socioRepository.save(socio);
+            log.info("Código QR generado de forma retroactiva para socio numeroSocio={}", socio.getNumeroSocio());
+        }
+        return new MiQrResponse(socio.getCodigoQr(), socio.getNumeroSocio(), socio.nombreParaMostrar());
     }
 
     private Socio buscarOFallar(String id) {

@@ -22,8 +22,14 @@ public final class RutasApi {
     public static final String ADMIN_REGLAS_CUOTA = ADMIN_REGLAS_CUOTA_BASE + "/**";
     public static final String SOCIO_CUOTAS_BASE = "/api/socio/cuotas";
     public static final String SOCIO_CUOTAS = SOCIO_CUOTAS_BASE + "/**";
+    public static final String SOCIO_PERFIL_BASE = "/api/socio/perfil";
+    public static final String SOCIO_PERFIL = SOCIO_PERFIL_BASE + "/**";
     public static final String ADMIN_SOCIOS_BASE = "/api/admin/socios";
     public static final String ADMIN_SOCIOS = ADMIN_SOCIOS_BASE + "/**";
+    public static final String COMERCIO_BENEFICIOS_BASE = "/api/comercio/beneficios";
+    public static final String COMERCIO_BENEFICIOS = COMERCIO_BENEFICIOS_BASE + "/**";
+    public static final String SOCIO_BENEFICIOS_BASE = "/api/socio/beneficios";
+    public static final String SOCIO_BENEFICIOS = SOCIO_BENEFICIOS_BASE + "/**";
 
     public static final String SWAGGER_UI_HTML = "/swagger-ui.html";
     public static final String SWAGGER_UI = "/swagger-ui/**";

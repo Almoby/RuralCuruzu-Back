@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -25,6 +26,7 @@ import com.almoby.ruralcuruzu.domain.DatosPersonaFisica;
 import com.almoby.ruralcuruzu.domain.Socio;
 import com.almoby.ruralcuruzu.domain.SolicitudSocio;
 import com.almoby.ruralcuruzu.domain.Usuario;
+import com.almoby.ruralcuruzu.dto.response.MiQrResponse;
 import com.almoby.ruralcuruzu.dto.response.SocioResponse;
 import com.almoby.ruralcuruzu.dto.response.SocioResumenResponse;
 import com.almoby.ruralcuruzu.enums.CategoriaSocio;
@@ -113,6 +115,7 @@ class SocioServiceImplTest {
         assertThat(socio.getNumeroSolicitudOrigen()).isEqualTo("SOL-000001");
         assertThat(socio.getAdminResponsableAltaId()).isEqualTo("admin-1");
         assertThat(socio.getAdminResponsableAltaNombre()).isEqualTo("Admin Uno");
+        assertThat(socio.getCodigoQr()).isNotBlank();
 
         // Copia, no la misma instancia: editar el Socio después no debe tocar la solicitud.
         assertThat(socio.getDatosPersonaFisica()).isNotSameAs(solicitud.getDatosPersonaFisica());
@@ -231,6 +234,41 @@ class SocioServiceImplTest {
         when(socioRepository.findById("no-existe")).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.obtenerSocioPorId("no-existe"))
+                .isInstanceOf(SocioNoEncontradoException.class);
+    }
+
+    @Test
+    void obtenerMiQr_devuelveElCodigoDelSocio() {
+        Socio socio = socioActivo("socio-1", "SOC-000001", "García, Juan Carlos");
+        socio.setCodigoQr("qr-abc-123");
+        when(socioRepository.findById("socio-1")).thenReturn(Optional.of(socio));
+
+        MiQrResponse resultado = service.obtenerMiQr("socio-1");
+
+        assertThat(resultado.codigoQr()).isEqualTo("qr-abc-123");
+        assertThat(resultado.numeroSocio()).isEqualTo("SOC-000001");
+        assertThat(resultado.nombre()).isEqualTo("García, Juan Carlos");
+    }
+
+    @Test
+    void obtenerMiQr_socioSinCodigoQr_loGeneraYLoPersiste() {
+        // Socios creados antes de agregar el campo codigoQr lo tienen null en Mongo.
+        Socio socio = socioActivo("socio-1", "SOC-000001", "García, Juan Carlos");
+        socio.setCodigoQr(null);
+        when(socioRepository.findById("socio-1")).thenReturn(Optional.of(socio));
+        when(socioRepository.save(any(Socio.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        MiQrResponse resultado = service.obtenerMiQr("socio-1");
+
+        assertThat(resultado.codigoQr()).isNotBlank();
+        verify(socioRepository).save(argThat(s -> s.getCodigoQr() != null));
+    }
+
+    @Test
+    void obtenerMiQr_socioInexistente_lanzaExcepcion() {
+        when(socioRepository.findById("no-existe")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.obtenerMiQr("no-existe"))
                 .isInstanceOf(SocioNoEncontradoException.class);
     }
 

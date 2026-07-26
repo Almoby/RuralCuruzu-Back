@@ -4,6 +4,7 @@ import java.util.List;
 
 import com.almoby.ruralcuruzu.domain.Socio;
 import com.almoby.ruralcuruzu.domain.SolicitudSocio;
+import com.almoby.ruralcuruzu.dto.response.MiQrResponse;
 import com.almoby.ruralcuruzu.dto.response.SocioResponse;
 import com.almoby.ruralcuruzu.dto.response.SocioResumenResponse;
 import com.almoby.ruralcuruzu.enums.EstadoSocio;
@@ -30,4 +31,7 @@ public interface SocioService {
     List<SocioResumenResponse> listarSocios(EstadoSocio estado);
 
     SocioResponse obtenerSocioPorId(String id);
+
+    /** El código QR propio de un socio (módulo Beneficios), para mostrar en pantalla. */
+    MiQrResponse obtenerMiQr(String socioId);
 }
