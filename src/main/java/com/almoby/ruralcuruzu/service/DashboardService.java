@@ -2,6 +2,7 @@ package com.almoby.ruralcuruzu.service;
 
 import java.util.List;
 
+import com.almoby.ruralcuruzu.dto.response.BeneficioMasUtilizadoResponse;
 import com.almoby.ruralcuruzu.dto.response.CobranzaMensualResponse;
 import com.almoby.ruralcuruzu.dto.response.EstadoSociosResponse;
 import com.almoby.ruralcuruzu.dto.response.IndicadoresPrincipalesResponse;
@@ -19,4 +20,11 @@ public interface DashboardService {
     EstadoSociosResponse obtenerEstadoSocios(CategoriaSocio categoria, TipoPersona tipoPersona);
 
     List<UsoBeneficioPorComercioResponse> obtenerUsoBeneficiosPorComercio();
+
+    /**
+     * Ranking global de beneficios individuales por cantidad de usos del mes
+     * actual (a diferencia de {@link #obtenerUsoBeneficiosPorComercio()}, que
+     * agrupa por comercio). Ordenado de mayor a menor, sin límite.
+     */
+    List<BeneficioMasUtilizadoResponse> obtenerBeneficiosMasUtilizados();
 }

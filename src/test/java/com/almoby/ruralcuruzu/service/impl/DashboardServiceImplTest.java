@@ -17,6 +17,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import com.almoby.ruralcuruzu.domain.Cuota;
 import com.almoby.ruralcuruzu.domain.HistorialBeneficio;
 import com.almoby.ruralcuruzu.domain.Socio;
+import com.almoby.ruralcuruzu.dto.response.BeneficioMasUtilizadoResponse;
 import com.almoby.ruralcuruzu.dto.response.CobranzaMensualResponse;
 import com.almoby.ruralcuruzu.dto.response.EstadoSociosResponse;
 import com.almoby.ruralcuruzu.dto.response.IndicadoresPrincipalesResponse;
@@ -79,10 +80,17 @@ class DashboardServiceImplTest {
 
     private HistorialBeneficio historial(String comercioId, String comercioNombre, String socioId,
                                           String beneficioTitulo, EstadoUsoBeneficio estado, Instant fechaUso) {
+        return historial(comercioId, comercioNombre, socioId, beneficioTitulo, beneficioTitulo, estado, fechaUso);
+    }
+
+    private HistorialBeneficio historial(String comercioId, String comercioNombre, String socioId,
+                                          String beneficioId, String beneficioTitulo, EstadoUsoBeneficio estado,
+                                          Instant fechaUso) {
         return HistorialBeneficio.builder()
                 .comercioId(comercioId)
                 .comercioNombre(comercioNombre)
                 .socioId(socioId)
+                .beneficioId(beneficioId)
                 .beneficioTitulo(beneficioTitulo)
                 .tipo(TipoBeneficio.DESCUENTO_PORCENTAJE)
                 .estado(estado)
@@ -303,5 +311,56 @@ class DashboardServiceImplTest {
 
         assertThat(resultado).hasSize(1);
         assertThat(resultado.get(0).usoPorPeriodo()).hasSize(2);
+    }
+
+    @Test
+    void usoBeneficios_cantidadEsteMesExcluyeUsosDeMesesAnteriores() {
+        Instant esteMes = Instant.now();
+        Instant mesPasado = esteMes.minus(Duration.ofDays(35));
+        when(historialBeneficioRepository.findAll()).thenReturn(List.of(
+                historial("c1", "Farmacia", "s1", "15%", EstadoUsoBeneficio.USADO, esteMes),
+                historial("c1", "Farmacia", "s2", "15%", EstadoUsoBeneficio.USADO, esteMes),
+                historial("c1", "Farmacia", "s3", "15%", EstadoUsoBeneficio.USADO, mesPasado)));
+
+        List<UsoBeneficioPorComercioResponse> resultado = service().obtenerUsoBeneficiosPorComercio();
+
+        assertThat(resultado.get(0).cantidadBeneficiosUtilizados()).isEqualTo(3); // histórico: los 3
+        assertThat(resultado.get(0).cantidadBeneficiosUtilizadosEsteMes()).isEqualTo(2); // solo este mes
+    }
+
+    // ---------- obtenerBeneficiosMasUtilizados ----------
+
+    @Test
+    void beneficiosMasUtilizados_agrupaPorBeneficioYOrdenaDeMayorAMenor() {
+        Instant esteMes = Instant.now();
+        when(historialBeneficioRepository.findAll()).thenReturn(List.of(
+                historial("c1", "Farmacia", "s1", "b1", "15% medicamentos", EstadoUsoBeneficio.USADO, esteMes),
+                historial("c1", "Farmacia", "s2", "b1", "15% medicamentos", EstadoUsoBeneficio.USADO, esteMes),
+                historial("c2", "Gimnasio", "s1", "b2", "Clase gratis", EstadoUsoBeneficio.USADO, esteMes)));
+
+        List<BeneficioMasUtilizadoResponse> resultado = service().obtenerBeneficiosMasUtilizados();
+
+        assertThat(resultado).hasSize(2);
+        assertThat(resultado.get(0).beneficioId()).isEqualTo("b1");
+        assertThat(resultado.get(0).beneficioTitulo()).isEqualTo("15% medicamentos");
+        assertThat(resultado.get(0).comercioNombre()).isEqualTo("Farmacia");
+        assertThat(resultado.get(0).usosEsteMes()).isEqualTo(2);
+        assertThat(resultado.get(1).beneficioId()).isEqualTo("b2");
+        assertThat(resultado.get(1).usosEsteMes()).isEqualTo(1);
+    }
+
+    @Test
+    void beneficiosMasUtilizados_excluyeUsosDeMesesAnterioresYAnulados() {
+        Instant esteMes = Instant.now();
+        Instant mesPasado = esteMes.minus(Duration.ofDays(40));
+        when(historialBeneficioRepository.findAll()).thenReturn(List.of(
+                historial("c1", "Farmacia", "s1", "b1", "15% medicamentos", EstadoUsoBeneficio.USADO, esteMes),
+                historial("c1", "Farmacia", "s2", "b1", "15% medicamentos", EstadoUsoBeneficio.USADO, mesPasado),
+                historial("c1", "Farmacia", "s3", "b1", "15% medicamentos", EstadoUsoBeneficio.ANULADO, esteMes)));
+
+        List<BeneficioMasUtilizadoResponse> resultado = service().obtenerBeneficiosMasUtilizados();
+
+        assertThat(resultado).hasSize(1);
+        assertThat(resultado.get(0).usosEsteMes()).isEqualTo(1);
     }
 }

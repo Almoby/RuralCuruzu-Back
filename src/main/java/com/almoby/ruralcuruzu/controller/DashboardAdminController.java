@@ -1,8 +1,11 @@
 package com.almoby.ruralcuruzu.controller;
 
+import java.time.LocalDate;
 import java.time.Year;
 import java.util.List;
 
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -10,12 +13,14 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.almoby.ruralcuruzu.constantes.RutasApi;
+import com.almoby.ruralcuruzu.dto.response.BeneficioMasUtilizadoResponse;
 import com.almoby.ruralcuruzu.dto.response.CobranzaMensualResponse;
 import com.almoby.ruralcuruzu.dto.response.EstadoSociosResponse;
 import com.almoby.ruralcuruzu.dto.response.IndicadoresPrincipalesResponse;
 import com.almoby.ruralcuruzu.dto.response.UsoBeneficioPorComercioResponse;
 import com.almoby.ruralcuruzu.enums.CategoriaSocio;
 import com.almoby.ruralcuruzu.enums.TipoPersona;
+import com.almoby.ruralcuruzu.service.DashboardExportService;
 import com.almoby.ruralcuruzu.service.DashboardService;
 
 import io.swagger.v3.oas.annotations.Operation;
@@ -38,9 +43,11 @@ import lombok.extern.slf4j.Slf4j;
 public class DashboardAdminController {
 
     private final DashboardService dashboardService;
+    private final DashboardExportService dashboardExportService;
 
-    public DashboardAdminController(DashboardService dashboardService) {
+    public DashboardAdminController(DashboardService dashboardService, DashboardExportService dashboardExportService) {
         this.dashboardService = dashboardService;
+        this.dashboardExportService = dashboardExportService;
     }
 
     @Operation(summary = "Indicadores principales (sección 7.1)",
@@ -94,5 +101,37 @@ public class DashboardAdminController {
     public ResponseEntity<List<UsoBeneficioPorComercioResponse>> obtenerUsoBeneficiosPorComercio() {
         log.info("GET /api/admin/dashboard/uso-beneficios-por-comercio");
         return ResponseEntity.ok(dashboardService.obtenerUsoBeneficiosPorComercio());
+    }
+
+    @Operation(summary = "Ranking de beneficios más utilizados",
+            description = "A diferencia de uso-beneficios-por-comercio (que agrupa por comercio), acá cada fila es "
+                    + "un beneficio individual con su cantidad de usos del mes en curso. Ordenado de mayor a menor, "
+                    + "sin límite (el front recorta el top que necesite, ej. el top 5).")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Datos obtenidos correctamente")
+    })
+    @GetMapping("/beneficios-mas-utilizados")
+    public ResponseEntity<List<BeneficioMasUtilizadoResponse>> obtenerBeneficiosMasUtilizados() {
+        log.info("GET /api/admin/dashboard/beneficios-mas-utilizados");
+        return ResponseEntity.ok(dashboardService.obtenerBeneficiosMasUtilizados());
+    }
+
+    @Operation(summary = "Exportar el reporte completo en PDF",
+            description = "Arma un único PDF con las 5 secciones del dashboard (indicadores principales, cobranza "
+                    + "mensual del año en curso, estado de socios, uso de beneficios por comercio y ranking de "
+                    + "beneficios más utilizados) para descargar.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "PDF generado correctamente")
+    })
+    @GetMapping("/exportar")
+    public ResponseEntity<byte[]> exportarReporte() {
+        log.info("GET /api/admin/dashboard/exportar");
+        byte[] pdf = dashboardExportService.generarReportePdf();
+
+        String nombreArchivo = "reporte-rural-curuzu-" + LocalDate.now() + ".pdf";
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + nombreArchivo + "\"")
+                .contentType(MediaType.APPLICATION_PDF)
+                .body(pdf);
     }
 }

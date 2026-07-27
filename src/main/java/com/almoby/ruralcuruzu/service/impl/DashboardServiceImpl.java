@@ -16,6 +16,7 @@ import org.springframework.stereotype.Service;
 import com.almoby.ruralcuruzu.domain.Cuota;
 import com.almoby.ruralcuruzu.domain.HistorialBeneficio;
 import com.almoby.ruralcuruzu.domain.Socio;
+import com.almoby.ruralcuruzu.dto.response.BeneficioMasUtilizadoResponse;
 import com.almoby.ruralcuruzu.dto.response.CobranzaMensualResponse;
 import com.almoby.ruralcuruzu.dto.response.EstadoSociosResponse;
 import com.almoby.ruralcuruzu.dto.response.IndicadoresPrincipalesResponse;
@@ -206,18 +207,24 @@ public class DashboardServiceImpl implements DashboardService {
 
     @Override
     public List<UsoBeneficioPorComercioResponse> obtenerUsoBeneficiosPorComercio() {
+        Instant inicioMesActual = inicioDeMesActual();
         Map<String, List<HistorialBeneficio>> porComercio = historialBeneficioRepository.findAll().stream()
                 .filter(h -> h.getEstado() == EstadoUsoBeneficio.USADO)
                 .collect(Collectors.groupingBy(HistorialBeneficio::getComercioId));
 
         return porComercio.entrySet().stream()
-                .map(entry -> construirFilaComercio(entry.getKey(), entry.getValue()))
+                .map(entry -> construirFilaComercio(entry.getKey(), entry.getValue(), inicioMesActual))
                 .sorted(Comparator.comparingLong(UsoBeneficioPorComercioResponse::cantidadBeneficiosUtilizados).reversed())
                 .toList();
     }
 
-    private UsoBeneficioPorComercioResponse construirFilaComercio(String comercioId, List<HistorialBeneficio> usos) {
+    private UsoBeneficioPorComercioResponse construirFilaComercio(
+            String comercioId, List<HistorialBeneficio> usos, Instant inicioMesActual) {
         String comercioNombre = usos.get(0).getComercioNombre();
+
+        long cantidadEsteMes = usos.stream()
+                .filter(h -> h.getFechaUso() != null && !h.getFechaUso().isBefore(inicioMesActual))
+                .count();
 
         long cantidadSociosUnicos = usos.stream().map(HistorialBeneficio::getSocioId).distinct().count();
 
@@ -239,7 +246,28 @@ public class DashboardServiceImpl implements DashboardService {
                 .toList();
 
         return new UsoBeneficioPorComercioResponse(
-                comercioId, comercioNombre, usos.size(), cantidadSociosUnicos, promocionMasUtilizada, usoPorPeriodo);
+                comercioId, comercioNombre, usos.size(), cantidadEsteMes,
+                cantidadSociosUnicos, promocionMasUtilizada, usoPorPeriodo);
+    }
+
+    @Override
+    public List<BeneficioMasUtilizadoResponse> obtenerBeneficiosMasUtilizados() {
+        Instant inicioMesActual = inicioDeMesActual();
+        Map<String, List<HistorialBeneficio>> porBeneficio = historialBeneficioRepository.findAll().stream()
+                .filter(h -> h.getEstado() == EstadoUsoBeneficio.USADO
+                        && h.getFechaUso() != null
+                        && !h.getFechaUso().isBefore(inicioMesActual))
+                .collect(Collectors.groupingBy(HistorialBeneficio::getBeneficioId));
+
+        return porBeneficio.entrySet().stream()
+                .map(entry -> {
+                    HistorialBeneficio primero = entry.getValue().get(0);
+                    return new BeneficioMasUtilizadoResponse(
+                            entry.getKey(), primero.getBeneficioTitulo(), primero.getComercioNombre(),
+                            entry.getValue().size());
+                })
+                .sorted(Comparator.comparingLong(BeneficioMasUtilizadoResponse::usosEsteMes).reversed())
+                .toList();
     }
 
     private BigDecimal sumaImporteFacturado(List<Cuota> cuotas, String periodo) {
