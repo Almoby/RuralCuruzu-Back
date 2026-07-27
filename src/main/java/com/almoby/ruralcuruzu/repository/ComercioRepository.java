@@ -14,6 +14,11 @@ public interface ComercioRepository extends MongoRepository<Comercio, String> {
 
     boolean existsByCorreoElectronicoIgnoreCase(String correoElectronico);
 
+    /** Para validar unicidad al editar: "¿hay OTRO comercio con este CUIT/correo?". */
+    boolean existsByCuitAndIdNot(String cuit, String id);
+
+    boolean existsByCorreoElectronicoIgnoreCaseAndIdNot(String correoElectronico, String id);
+
     List<Comercio> findByEstado(EstadoComercio estado);
 
     Optional<Comercio> findByUsuarioId(String usuarioId);

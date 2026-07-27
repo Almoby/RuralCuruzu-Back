@@ -89,4 +89,11 @@ public interface EmailService {
 
     /** Avisa al socio que un admin rechazó el pago que había informado, con el motivo. */
     void enviarCorreoPagoRechazado(String destinatario, String nombre, String periodo, String motivo);
+
+    /**
+     * Avisa al comercio que fue eliminado de la plataforma, con el motivo.
+     * Se manda antes de borrar nada (la cuenta de acceso del comercio
+     * también se elimina como parte de la baja).
+     */
+    void enviarCorreoComercioEliminado(String destinatario, String nombreComercial, String motivo);
 }

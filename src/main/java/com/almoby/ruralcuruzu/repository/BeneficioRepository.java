@@ -13,4 +13,7 @@ public interface BeneficioRepository extends MongoRepository<Beneficio, String> 
 
     /** Usado para el listado del socio: se filtra la vigencia por fecha en el service. */
     List<Beneficio> findByEstado(EstadoBeneficio estado);
+
+    /** Usado al eliminar un comercio: sus beneficios se borran en cascada (ver ComercioServiceImpl.eliminarComercio). */
+    void deleteByComercioId(String comercioId);
 }

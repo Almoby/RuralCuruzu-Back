@@ -11,4 +11,7 @@ public interface HistorialBeneficioRepository extends MongoRepository<HistorialB
     List<HistorialBeneficio> findBySocioIdOrderByFechaUsoDesc(String socioId);
 
     boolean existsBySocioIdAndBeneficioId(String socioId, String beneficioId);
+
+    /** Usado en el panel admin: detalle de un comercio (consumos totales, usos por promoción). */
+    List<HistorialBeneficio> findByComercioId(String comercioId);
 }

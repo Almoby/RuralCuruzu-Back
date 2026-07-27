@@ -481,6 +481,47 @@ public class SmtpEmailService implements EmailService {
                 """.formatted(nombre, periodo, motivo);
     }
 
+    @Override
+    public void enviarCorreoComercioEliminado(String destinatario, String nombreComercial, String motivo) {
+        try {
+            MimeMessage mensaje = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(mensaje, true, "UTF-8");
+
+            helper.setFrom(remitente);
+            helper.setTo(destinatario);
+            helper.setSubject("Tu comercio fue dado de baja - Rural Curuzú");
+            helper.setText(cuerpoTextoPlanoComercioEliminado(nombreComercial, motivo),
+                    cuerpoHtmlComercioEliminado(nombreComercial, motivo));
+
+            mailSender.send(mensaje);
+            log.info("Correo de baja de comercio enviado a email={}", destinatario);
+        } catch (MessagingException | MailException ex) {
+            // El comercio YA se eliminó con éxito (y su cuenta de acceso también):
+            // que falle este aviso no debe romper la respuesta de la operación.
+            log.error("Error enviando correo de baja de comercio a email={}", destinatario, ex);
+        }
+    }
+
+    private String cuerpoTextoPlanoComercioEliminado(String nombreComercial, String motivo) {
+        return """
+                Hola,
+
+                El comercio %s fue eliminado de la plataforma Rural Curuzú.
+                Motivo: %s
+
+                Si creés que fue un error, podés contactarnos.
+                """.formatted(nombreComercial, motivo);
+    }
+
+    private String cuerpoHtmlComercioEliminado(String nombreComercial, String motivo) {
+        return """
+                <p>Hola,</p>
+                <p>El comercio <strong>%s</strong> fue eliminado de la plataforma <strong>Rural Curuzú</strong>.</p>
+                <p>Motivo: %s</p>
+                <p>Si creés que fue un error, podés contactarnos.</p>
+                """.formatted(nombreComercial, motivo);
+    }
+
     private String cuerpoTextoPlanoRechazo(String nombre, String numeroSolicitud, String motivo) {
         return """
                 Hola %s,

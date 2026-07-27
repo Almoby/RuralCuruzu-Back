@@ -7,7 +7,9 @@ import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  * Fila resumida para el listado del panel de administración (documento,
- * sección 12.1).
+ * sección 12.1). {@code cantidadPromociones} y {@code consumosTotales} se
+ * calculan en el service (a partir de Beneficio y HistorialBeneficio, no
+ * viven en el propio Comercio) y se pasan ya resueltos a {@link #from}.
  */
 public record ComercioResumenResponse(
 
@@ -21,12 +23,14 @@ public record ComercioResumenResponse(
         String direccion,
         EstadoComercio estado,
 
-        @Schema(description = "Se completa cuando exista el módulo de Beneficios/Promociones. Por ahora siempre 0.")
-        long cantidadPromociones
+        long cantidadPromociones,
+
+        @Schema(description = "Cantidad total de veces que se usó alguna promoción de este comercio (historial completo).")
+        long consumosTotales
 
 ) {
 
-    public static ComercioResumenResponse from(Comercio comercio) {
+    public static ComercioResumenResponse from(Comercio comercio, long cantidadPromociones, long consumosTotales) {
         return new ComercioResumenResponse(
                 comercio.getId(),
                 comercio.getNombreComercial(),
@@ -37,6 +41,7 @@ public record ComercioResumenResponse(
                 comercio.getCorreoElectronico(),
                 comercio.getDireccion(),
                 comercio.getEstado(),
-                0L);
+                cantidadPromociones,
+                consumosTotales);
     }
 }

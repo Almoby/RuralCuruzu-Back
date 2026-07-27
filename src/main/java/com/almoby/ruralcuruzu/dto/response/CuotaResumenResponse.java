@@ -5,8 +5,13 @@ import java.time.LocalDate;
 
 import com.almoby.ruralcuruzu.domain.Cuota;
 import com.almoby.ruralcuruzu.enums.EstadoCuota;
+import com.almoby.ruralcuruzu.enums.MedioPago;
 
-/** Fila de listado, sin todos los detalles de CuotaResponse. */
+/**
+ * Fila de listado, sin todos los detalles de CuotaResponse.
+ * {@code medioPago} viene de {@code datosPago} y es null en cuotas que
+ * todavía no tienen un pago registrado (PENDIENTE/VENCIDA sin informar).
+ */
 public record CuotaResumenResponse(
 
         String id,
@@ -15,7 +20,8 @@ public record CuotaResumenResponse(
         String periodo,
         BigDecimal importe,
         EstadoCuota estado,
-        LocalDate fechaVencimiento
+        LocalDate fechaVencimiento,
+        MedioPago medioPago
 
 ) {
 
@@ -27,6 +33,7 @@ public record CuotaResumenResponse(
                 cuota.getPeriodo(),
                 cuota.getImporte(),
                 cuota.getEstado(),
-                cuota.getFechaVencimiento());
+                cuota.getFechaVencimiento(),
+                cuota.getDatosPago() != null ? cuota.getDatosPago().getMedioPago() : null);
     }
 }

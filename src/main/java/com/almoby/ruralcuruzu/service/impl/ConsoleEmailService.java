@@ -179,4 +179,17 @@ public class ConsoleEmailService implements EmailService {
                 ============================================================""",
                 destinatario, nombre, periodo, motivo);
     }
+
+    @Override
+    public void enviarCorreoComercioEliminado(String destinatario, String nombreComercial, String motivo) {
+        log.info("""
+                ==================== EMAIL (simulado) ====================
+                Para: {}
+                Asunto: Tu comercio fue dado de baja - Rural Curuzú
+                Hola,
+                El comercio {} fue eliminado de la plataforma Rural Curuzú. Motivo: {}
+                Si creés que fue un error, podés contactarnos.
+                ============================================================""",
+                destinatario, nombreComercial, motivo);
+    }
 }
