@@ -4,14 +4,17 @@ import java.util.List;
 
 import com.almoby.ruralcuruzu.domain.Socio;
 import com.almoby.ruralcuruzu.domain.SolicitudSocio;
+import com.almoby.ruralcuruzu.dto.request.AltaManualSocioRequest;
 import com.almoby.ruralcuruzu.dto.response.MiQrResponse;
+import com.almoby.ruralcuruzu.dto.response.SocioCreadoResponse;
 import com.almoby.ruralcuruzu.dto.response.SocioResponse;
 import com.almoby.ruralcuruzu.dto.response.SocioResumenResponse;
 import com.almoby.ruralcuruzu.enums.EstadoSocio;
 
 /**
- * Alta y consulta de Socios. Hoy la única forma de crear un Socio es aprobar una
- * {@link SolicitudSocio} (documento, sección 8.4); esa lógica vive acá y no en
+ * Alta y consulta de Socios. Hay dos formas de crear un Socio: aprobar una
+ * {@link SolicitudSocio} (documento, sección 8.4) o el alta manual directa
+ * del admin (documento, sección 9.5); esa lógica vive acá y no en
  * SolicitudSocioService para no mezclar responsabilidades de dos módulos distintos.
  */
 public interface SocioService {
@@ -25,6 +28,16 @@ public interface SocioService {
     Socio crearSocioDesdeSolicitud(SolicitudSocio solicitud, String adminId, String adminNombre);
 
     /**
+     * Alta manual de un socio por parte del admin (documento, sección 9.5):
+     * a diferencia de crearSocioDesdeSolicitud, no hay ninguna SolicitudSocio
+     * de por medio, el admin carga los datos directo y elige el estado
+     * inicial (por defecto ACTIVO). Igual que en el resto del proyecto, se
+     * crea también el Usuario con contraseña temporal y rol SOCIO, y se le
+     * mandan las credenciales por correo.
+     */
+    SocioCreadoResponse crearSocioManual(AltaManualSocioRequest request, String adminId, String adminNombre);
+
+    /**
      * Listado completo (sin paginación), opcionalmente filtrado por estado.
      * Usado, entre otras cosas, para poblar el select de socio del panel de Cuotas.
      */
@@ -32,6 +45,10 @@ public interface SocioService {
 
     SocioResponse obtenerSocioPorId(String id);
 
-    /** El código QR propio de un socio (módulo Beneficios), para mostrar en pantalla. */
+    /**
+     * "Mi QR" del socio (documento, sección 15): genera un token nuevo de
+     * corta duración para mostrar en pantalla (módulo Beneficios), junto con
+     * su estado vigente. Cada llamada devuelve un token distinto.
+     */
     MiQrResponse obtenerMiQr(String socioId);
 }

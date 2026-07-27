@@ -36,10 +36,11 @@ public class SocioQrController {
     }
 
     @Operation(summary = "Ver mi código QR",
-            description = "Código único del socio para el módulo de Beneficios: lo muestra en pantalla y el "
-                    + "comercio lo escanea para aplicarle un beneficio.")
+            description = "Token del socio para el módulo de Beneficios (documento 15.1): vence a los pocos "
+                    + "segundos (ver 'expiraEn'), así que la app debe pedir uno nuevo antes de esa fecha para "
+                    + "mantener el QR en pantalla escaneable. El comercio lo escanea para aplicarle un beneficio.")
     @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "Código obtenido correctamente")
+            @ApiResponse(responseCode = "200", description = "Token generado correctamente")
     })
     @GetMapping("/mi-qr")
     public ResponseEntity<MiQrResponse> miQr(@AuthenticationPrincipal AuthenticatedUser socio) {

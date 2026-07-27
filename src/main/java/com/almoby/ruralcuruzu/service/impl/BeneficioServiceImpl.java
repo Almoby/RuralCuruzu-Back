@@ -31,7 +31,9 @@ import com.almoby.ruralcuruzu.repository.BeneficioRepository;
 import com.almoby.ruralcuruzu.repository.ComercioRepository;
 import com.almoby.ruralcuruzu.repository.HistorialBeneficioRepository;
 import com.almoby.ruralcuruzu.repository.SocioRepository;
+import com.almoby.ruralcuruzu.security.jwt.QrTokenService;
 import com.almoby.ruralcuruzu.service.BeneficioService;
+import com.almoby.ruralcuruzu.service.EstadoQrService;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -58,15 +60,21 @@ public class BeneficioServiceImpl implements BeneficioService {
     private final HistorialBeneficioRepository historialBeneficioRepository;
     private final ComercioRepository comercioRepository;
     private final SocioRepository socioRepository;
+    private final EstadoQrService estadoQrService;
+    private final QrTokenService qrTokenService;
 
     public BeneficioServiceImpl(BeneficioRepository beneficioRepository,
                                  HistorialBeneficioRepository historialBeneficioRepository,
                                  ComercioRepository comercioRepository,
-                                 SocioRepository socioRepository) {
+                                 SocioRepository socioRepository,
+                                 EstadoQrService estadoQrService,
+                                 QrTokenService qrTokenService) {
         this.beneficioRepository = beneficioRepository;
         this.historialBeneficioRepository = historialBeneficioRepository;
         this.comercioRepository = comercioRepository;
         this.socioRepository = socioRepository;
+        this.estadoQrService = estadoQrService;
+        this.qrTokenService = qrTokenService;
     }
 
     @Override
@@ -142,9 +150,17 @@ public class BeneficioServiceImpl implements BeneficioService {
     }
 
     @Override
-    public ValidarBeneficioResponse validarYUsarBeneficio(String comercioId, ValidarBeneficioRequest request) {
-        Socio socio = socioRepository.findByCodigoQr(request.codigoQr())
+    public ValidarBeneficioResponse validarYUsarBeneficio(String comercioId, String usuarioComercioId,
+                                                            ValidarBeneficioRequest request) {
+        // El token del QR (documento 15.1: "no debe ser una imagen fija permanente")
+        // vence a los pocos segundos; si es válido, devuelve el id del socio dueño.
+        String socioId = qrTokenService.extraerSocioId(request.codigoQr());
+        Socio socio = socioRepository.findById(socioId)
                 .orElseThrow(CodigoQrInvalidoException::new);
+
+        // Documento 15.2/15.6: primero se verifica el estado del socio (activo,
+        // cuota al día, cuenta no suspendida) y recién después la promoción elegida.
+        estadoQrService.validarQrActivo(socio);
 
         Beneficio beneficio = buscarPropioOFallar(comercioId, request.beneficioId());
 
@@ -163,6 +179,7 @@ public class BeneficioServiceImpl implements BeneficioService {
                 .valor(beneficio.getValor())
                 .comercioId(beneficio.getComercioId())
                 .comercioNombre(beneficio.getComercioNombre())
+                .usuarioComercioId(usuarioComercioId)
                 .socioId(socio.getId())
                 .socioNumeroSocio(socio.getNumeroSocio())
                 .socioNombre(socio.nombreParaMostrar())

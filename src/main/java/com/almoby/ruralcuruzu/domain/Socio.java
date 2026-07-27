@@ -59,16 +59,6 @@ public class Socio {
     @Field("usuario_id")
     private String usuarioId;
 
-    /**
-     * Código único e infalsificable que identifica a este socio para el
-     * módulo de Beneficios ("Mi QR"): el socio lo muestra, el comercio lo
-     * escanea, y así el sistema sabe quién está usando el beneficio. Se
-     * genera una sola vez, al crear el socio.
-     */
-    @Indexed(unique = true)
-    @Field("codigo_qr")
-    private String codigoQr;
-
     /** Número de la solicitud aprobada que originó este socio (solo trazabilidad). */
     @Field("numero_solicitud_origen")
     private String numeroSolicitudOrigen;

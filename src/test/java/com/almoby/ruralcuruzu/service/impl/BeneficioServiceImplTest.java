@@ -3,6 +3,8 @@ package com.almoby.ruralcuruzu.service.impl;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -38,6 +40,7 @@ import com.almoby.ruralcuruzu.dto.response.ValidarBeneficioResponse;
 import com.almoby.ruralcuruzu.enums.CategoriaSocio;
 import com.almoby.ruralcuruzu.enums.EstadoBeneficio;
 import com.almoby.ruralcuruzu.enums.EstadoComercio;
+import com.almoby.ruralcuruzu.enums.EstadoQr;
 import com.almoby.ruralcuruzu.enums.EstadoSocio;
 import com.almoby.ruralcuruzu.enums.EstadoUsoBeneficio;
 import com.almoby.ruralcuruzu.enums.TipoBeneficio;
@@ -45,12 +48,16 @@ import com.almoby.ruralcuruzu.enums.TipoPersona;
 import com.almoby.ruralcuruzu.exception.BeneficioNoEncontradoException;
 import com.almoby.ruralcuruzu.exception.BeneficioNoVigenteException;
 import com.almoby.ruralcuruzu.exception.BeneficioYaCanjeadoException;
+import com.almoby.ruralcuruzu.exception.CodigoQrExpiradoException;
 import com.almoby.ruralcuruzu.exception.CodigoQrInvalidoException;
 import com.almoby.ruralcuruzu.exception.ComercioNoEncontradoException;
+import com.almoby.ruralcuruzu.exception.QrNoValidoException;
 import com.almoby.ruralcuruzu.repository.BeneficioRepository;
 import com.almoby.ruralcuruzu.repository.ComercioRepository;
 import com.almoby.ruralcuruzu.repository.HistorialBeneficioRepository;
 import com.almoby.ruralcuruzu.repository.SocioRepository;
+import com.almoby.ruralcuruzu.security.jwt.QrTokenService;
+import com.almoby.ruralcuruzu.service.EstadoQrService;
 
 @ExtendWith(MockitoExtension.class)
 class BeneficioServiceImplTest {
@@ -63,12 +70,17 @@ class BeneficioServiceImplTest {
     private ComercioRepository comercioRepository;
     @Mock
     private SocioRepository socioRepository;
+    @Mock
+    private EstadoQrService estadoQrService;
+    @Mock
+    private QrTokenService qrTokenService;
 
     private BeneficioServiceImpl service;
 
     @BeforeEach
     void setUp() {
-        service = new BeneficioServiceImpl(beneficioRepository, historialBeneficioRepository, comercioRepository, socioRepository);
+        service = new BeneficioServiceImpl(beneficioRepository, historialBeneficioRepository, comercioRepository,
+                socioRepository, estadoQrService, qrTokenService);
     }
 
     private Comercio comercio() {
@@ -111,7 +123,6 @@ class BeneficioServiceImplTest {
                 .tipoPersona(TipoPersona.FISICA)
                 .datosPersonaFisica(datos)
                 .estado(EstadoSocio.ACTIVO)
-                .codigoQr("qr-abc-123")
                 .build();
     }
 
@@ -188,14 +199,15 @@ class BeneficioServiceImplTest {
     @Test
     void validarYUsarBeneficio_qrYBeneficioValidos_creaHistorialYDevuelveConfirmacion() {
         Beneficio beneficio = beneficioVigente("beneficio-1", "comercio-1");
-        when(socioRepository.findByCodigoQr("qr-abc-123")).thenReturn(Optional.of(socio()));
+        when(qrTokenService.extraerSocioId("qr-abc-123")).thenReturn("socio-1");
+        when(socioRepository.findById("socio-1")).thenReturn(Optional.of(socio()));
         when(beneficioRepository.findById("beneficio-1")).thenReturn(Optional.of(beneficio));
         when(historialBeneficioRepository.existsBySocioIdAndBeneficioId("socio-1", "beneficio-1")).thenReturn(false);
         when(historialBeneficioRepository.save(any(HistorialBeneficio.class))).thenAnswer(inv -> inv.getArgument(0));
 
         ValidarBeneficioRequest request = new ValidarBeneficioRequest("qr-abc-123", "beneficio-1", new BigDecimal("450.00"));
 
-        ValidarBeneficioResponse response = service.validarYUsarBeneficio("comercio-1", request);
+        ValidarBeneficioResponse response = service.validarYUsarBeneficio("comercio-1", "usuario-comercio-1", request);
 
         assertThat(response.mensaje()).isEqualTo("Beneficio aplicado con éxito");
         assertThat(response.socioNombre()).isEqualTo("Pérez, Juan");
@@ -206,27 +218,69 @@ class BeneficioServiceImplTest {
         verify(historialBeneficioRepository).save(captor.capture());
         assertThat(captor.getValue().getEstado()).isEqualTo(EstadoUsoBeneficio.USADO);
         assertThat(captor.getValue().getSocioId()).isEqualTo("socio-1");
+        assertThat(captor.getValue().getUsuarioComercioId()).isEqualTo("usuario-comercio-1");
     }
 
     @Test
-    void validarYUsarBeneficio_codigoQrInexistente_lanzaExcepcion() {
-        when(socioRepository.findByCodigoQr("qr-invalido")).thenReturn(Optional.empty());
+    void validarYUsarBeneficio_qrNoActivo_lanzaExcepcionYNoCreaHistorial() {
+        Beneficio beneficio = beneficioVigente("beneficio-1", "comercio-1");
+        when(qrTokenService.extraerSocioId("qr-abc-123")).thenReturn("socio-1");
+        when(socioRepository.findById("socio-1")).thenReturn(Optional.of(socio()));
+        doThrow(new QrNoValidoException("Tenés cuotas vencidas. Regularizá tu situación para volver a usar el QR."))
+                .when(estadoQrService).validarQrActivo(any(Socio.class));
+
+        ValidarBeneficioRequest request = new ValidarBeneficioRequest("qr-abc-123", "beneficio-1", new BigDecimal("450.00"));
+
+        assertThatThrownBy(() -> service.validarYUsarBeneficio("comercio-1", "usuario-comercio-1", request))
+                .isInstanceOf(QrNoValidoException.class)
+                .hasMessage("Tenés cuotas vencidas. Regularizá tu situación para volver a usar el QR.");
+
+        verify(historialBeneficioRepository, never()).save(any(HistorialBeneficio.class));
+        verify(beneficioRepository, never()).findById(anyString());
+    }
+
+    @Test
+    void validarYUsarBeneficio_tokenQrInvalido_lanzaExcepcion() {
+        when(qrTokenService.extraerSocioId("qr-invalido")).thenThrow(new CodigoQrInvalidoException());
 
         ValidarBeneficioRequest request = new ValidarBeneficioRequest("qr-invalido", "beneficio-1", BigDecimal.TEN);
 
-        assertThatThrownBy(() -> service.validarYUsarBeneficio("comercio-1", request))
+        assertThatThrownBy(() -> service.validarYUsarBeneficio("comercio-1", "usuario-comercio-1", request))
+                .isInstanceOf(CodigoQrInvalidoException.class);
+        verify(socioRepository, never()).findById(anyString());
+    }
+
+    @Test
+    void validarYUsarBeneficio_tokenQrExpirado_lanzaExcepcion() {
+        when(qrTokenService.extraerSocioId("qr-vencido")).thenThrow(new CodigoQrExpiradoException());
+
+        ValidarBeneficioRequest request = new ValidarBeneficioRequest("qr-vencido", "beneficio-1", BigDecimal.TEN);
+
+        assertThatThrownBy(() -> service.validarYUsarBeneficio("comercio-1", "usuario-comercio-1", request))
+                .isInstanceOf(CodigoQrExpiradoException.class);
+    }
+
+    @Test
+    void validarYUsarBeneficio_tokenValidoPeroSocioYaNoExiste_lanzaExcepcion() {
+        when(qrTokenService.extraerSocioId("qr-abc-123")).thenReturn("socio-borrado");
+        when(socioRepository.findById("socio-borrado")).thenReturn(Optional.empty());
+
+        ValidarBeneficioRequest request = new ValidarBeneficioRequest("qr-abc-123", "beneficio-1", BigDecimal.TEN);
+
+        assertThatThrownBy(() -> service.validarYUsarBeneficio("comercio-1", "usuario-comercio-1", request))
                 .isInstanceOf(CodigoQrInvalidoException.class);
     }
 
     @Test
     void validarYUsarBeneficio_beneficioDeOtroComercio_lanzaExcepcion() {
         Beneficio beneficio = beneficioVigente("beneficio-1", "comercio-ajeno");
-        when(socioRepository.findByCodigoQr("qr-abc-123")).thenReturn(Optional.of(socio()));
+        when(qrTokenService.extraerSocioId("qr-abc-123")).thenReturn("socio-1");
+        when(socioRepository.findById("socio-1")).thenReturn(Optional.of(socio()));
         when(beneficioRepository.findById("beneficio-1")).thenReturn(Optional.of(beneficio));
 
         ValidarBeneficioRequest request = new ValidarBeneficioRequest("qr-abc-123", "beneficio-1", BigDecimal.TEN);
 
-        assertThatThrownBy(() -> service.validarYUsarBeneficio("comercio-1", request))
+        assertThatThrownBy(() -> service.validarYUsarBeneficio("comercio-1", "usuario-comercio-1", request))
                 .isInstanceOf(BeneficioNoEncontradoException.class);
     }
 
@@ -234,12 +288,13 @@ class BeneficioServiceImplTest {
     void validarYUsarBeneficio_beneficioPausado_lanzaExcepcion() {
         Beneficio beneficio = beneficioVigente("beneficio-1", "comercio-1");
         beneficio.setEstado(EstadoBeneficio.INACTIVO);
-        when(socioRepository.findByCodigoQr("qr-abc-123")).thenReturn(Optional.of(socio()));
+        when(qrTokenService.extraerSocioId("qr-abc-123")).thenReturn("socio-1");
+        when(socioRepository.findById("socio-1")).thenReturn(Optional.of(socio()));
         when(beneficioRepository.findById("beneficio-1")).thenReturn(Optional.of(beneficio));
 
         ValidarBeneficioRequest request = new ValidarBeneficioRequest("qr-abc-123", "beneficio-1", BigDecimal.TEN);
 
-        assertThatThrownBy(() -> service.validarYUsarBeneficio("comercio-1", request))
+        assertThatThrownBy(() -> service.validarYUsarBeneficio("comercio-1", "usuario-comercio-1", request))
                 .isInstanceOf(BeneficioNoVigenteException.class);
     }
 
@@ -247,25 +302,27 @@ class BeneficioServiceImplTest {
     void validarYUsarBeneficio_beneficioVencido_lanzaExcepcion() {
         Beneficio beneficio = beneficioVigente("beneficio-1", "comercio-1");
         beneficio.setFechaFinVigencia(LocalDate.now().minusDays(1));
-        when(socioRepository.findByCodigoQr("qr-abc-123")).thenReturn(Optional.of(socio()));
+        when(qrTokenService.extraerSocioId("qr-abc-123")).thenReturn("socio-1");
+        when(socioRepository.findById("socio-1")).thenReturn(Optional.of(socio()));
         when(beneficioRepository.findById("beneficio-1")).thenReturn(Optional.of(beneficio));
 
         ValidarBeneficioRequest request = new ValidarBeneficioRequest("qr-abc-123", "beneficio-1", BigDecimal.TEN);
 
-        assertThatThrownBy(() -> service.validarYUsarBeneficio("comercio-1", request))
+        assertThatThrownBy(() -> service.validarYUsarBeneficio("comercio-1", "usuario-comercio-1", request))
                 .isInstanceOf(BeneficioNoVigenteException.class);
     }
 
     @Test
     void validarYUsarBeneficio_socioYaLoHabiaCanjeadoAntes_lanzaExcepcionYNoDuplicaElRegistro() {
         Beneficio beneficio = beneficioVigente("beneficio-1", "comercio-1");
-        when(socioRepository.findByCodigoQr("qr-abc-123")).thenReturn(Optional.of(socio()));
+        when(qrTokenService.extraerSocioId("qr-abc-123")).thenReturn("socio-1");
+        when(socioRepository.findById("socio-1")).thenReturn(Optional.of(socio()));
         when(beneficioRepository.findById("beneficio-1")).thenReturn(Optional.of(beneficio));
         when(historialBeneficioRepository.existsBySocioIdAndBeneficioId("socio-1", "beneficio-1")).thenReturn(true);
 
         ValidarBeneficioRequest request = new ValidarBeneficioRequest("qr-abc-123", "beneficio-1", BigDecimal.TEN);
 
-        assertThatThrownBy(() -> service.validarYUsarBeneficio("comercio-1", request))
+        assertThatThrownBy(() -> service.validarYUsarBeneficio("comercio-1", "usuario-comercio-1", request))
                 .isInstanceOf(BeneficioYaCanjeadoException.class);
         verify(historialBeneficioRepository, never()).save(any(HistorialBeneficio.class));
     }

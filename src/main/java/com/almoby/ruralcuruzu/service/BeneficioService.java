@@ -28,8 +28,14 @@ public interface BeneficioService {
 
     BeneficioResponse cambiarEstadoBeneficio(String comercioId, String beneficioId, CambiarEstadoBeneficioRequest request);
 
-    /** El comercio escanea el QR del socio y aplica uno de sus propios beneficios (documento 14, flujo de uso). */
-    ValidarBeneficioResponse validarYUsarBeneficio(String comercioId, ValidarBeneficioRequest request);
+    /**
+     * El comercio escanea el QR del socio y aplica uno de sus propios
+     * beneficios (documento 14, flujo de uso). Antes de aplicar nada, valida
+     * que el QR del socio esté ACTIVO (documento 15.2: socio activo, cuota al
+     * día, usuario no suspendido). {@code usuarioComercioId} es la cuenta del
+     * comercio que hizo la validación (documento 15.6).
+     */
+    ValidarBeneficioResponse validarYUsarBeneficio(String comercioId, String usuarioComercioId, ValidarBeneficioRequest request);
 
     // ---------- consulta del socio ----------
 

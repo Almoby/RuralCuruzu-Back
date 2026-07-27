@@ -232,6 +232,19 @@ public class GlobalExceptionHandler {
         return responder(HttpStatus.NOT_FOUND, ex.getMessage(), request);
     }
 
+    @ExceptionHandler(CodigoQrExpiradoException.class)
+    public ResponseEntity<ApiErrorResponse> handleCodigoQrExpirado(CodigoQrExpiradoException ex,
+                                                                     HttpServletRequest request) {
+        log.warn("Código QR expirado [{}]: {}", request.getRequestURI(), ex.getMessage());
+        return responder(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(QrNoValidoException.class)
+    public ResponseEntity<ApiErrorResponse> handleQrNoValido(QrNoValidoException ex, HttpServletRequest request) {
+        log.warn("QR no válido [{}]: {}", request.getRequestURI(), ex.getMessage());
+        return responder(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
+    }
+
     @ExceptionHandler(BeneficioYaCanjeadoException.class)
     public ResponseEntity<ApiErrorResponse> handleBeneficioYaCanjeado(BeneficioYaCanjeadoException ex,
                                                                         HttpServletRequest request) {

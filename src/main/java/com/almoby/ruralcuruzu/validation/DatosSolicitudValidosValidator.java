@@ -1,16 +1,20 @@
 package com.almoby.ruralcuruzu.validation;
 
 import com.almoby.ruralcuruzu.enums.TipoPersona;
-import com.almoby.ruralcuruzu.dto.request.SolicitudSocioRequest;
 
 import jakarta.validation.ConstraintValidator;
 import jakarta.validation.ConstraintValidatorContext;
 
+/**
+ * Ver {@link DatosPersonaRequestValidable}: esta validación es compartida por
+ * cualquier request que implemente esa interfaz (hoy, SolicitudSocioRequest y
+ * AltaManualSocioRequest), no está atada a un único DTO.
+ */
 public class DatosSolicitudValidosValidator
-        implements ConstraintValidator<DatosSolicitudValidos, SolicitudSocioRequest> {
+        implements ConstraintValidator<DatosSolicitudValidos, DatosPersonaRequestValidable> {
 
     @Override
-    public boolean isValid(SolicitudSocioRequest request, ConstraintValidatorContext context) {
+    public boolean isValid(DatosPersonaRequestValidable request, ConstraintValidatorContext context) {
         if (request == null || request.tipoPersona() == null) {
             // @NotNull en tipoPersona ya reporta este caso; no duplicamos el error.
             return true;

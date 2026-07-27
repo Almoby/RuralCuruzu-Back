@@ -4,12 +4,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
@@ -26,19 +27,28 @@ import com.almoby.ruralcuruzu.domain.DatosPersonaFisica;
 import com.almoby.ruralcuruzu.domain.Socio;
 import com.almoby.ruralcuruzu.domain.SolicitudSocio;
 import com.almoby.ruralcuruzu.domain.Usuario;
+import com.almoby.ruralcuruzu.dto.request.AltaManualSocioRequest;
+import com.almoby.ruralcuruzu.dto.response.EstadoQrResponse;
 import com.almoby.ruralcuruzu.dto.response.MiQrResponse;
+import com.almoby.ruralcuruzu.dto.response.SocioCreadoResponse;
 import com.almoby.ruralcuruzu.dto.response.SocioResponse;
 import com.almoby.ruralcuruzu.dto.response.SocioResumenResponse;
 import com.almoby.ruralcuruzu.enums.CategoriaSocio;
+import com.almoby.ruralcuruzu.enums.EstadoQr;
 import com.almoby.ruralcuruzu.enums.EstadoSocio;
 import com.almoby.ruralcuruzu.enums.EstadoSolicitud;
 import com.almoby.ruralcuruzu.enums.EstadoUsuario;
 import com.almoby.ruralcuruzu.enums.Rol;
 import com.almoby.ruralcuruzu.enums.TipoPersona;
+import com.almoby.ruralcuruzu.exception.EmailYaRegistradoException;
 import com.almoby.ruralcuruzu.exception.SocioNoEncontradoException;
 import com.almoby.ruralcuruzu.repository.SocioRepository;
+import com.almoby.ruralcuruzu.repository.UsuarioRepository;
+import com.almoby.ruralcuruzu.security.jwt.QrTokenGenerado;
+import com.almoby.ruralcuruzu.security.jwt.QrTokenService;
 import com.almoby.ruralcuruzu.service.CuentaAccesoService;
 import com.almoby.ruralcuruzu.service.EmailService;
+import com.almoby.ruralcuruzu.service.EstadoQrService;
 import com.almoby.ruralcuruzu.service.SecuenciaService;
 
 /**
@@ -55,17 +65,24 @@ class SocioServiceImplTest {
     @Mock
     private SocioRepository socioRepository;
     @Mock
+    private UsuarioRepository usuarioRepository;
+    @Mock
     private SecuenciaService secuenciaService;
     @Mock
     private CuentaAccesoService cuentaAccesoService;
     @Mock
     private EmailService emailService;
+    @Mock
+    private EstadoQrService estadoQrService;
+    @Mock
+    private QrTokenService qrTokenService;
 
     private SocioServiceImpl service;
 
     @BeforeEach
     void setUp() {
-        service = new SocioServiceImpl(socioRepository, secuenciaService, cuentaAccesoService, emailService);
+        service = new SocioServiceImpl(socioRepository, usuarioRepository, secuenciaService, cuentaAccesoService,
+                emailService, estadoQrService, qrTokenService);
     }
 
     private SolicitudSocio solicitudAprobada() {
@@ -115,7 +132,6 @@ class SocioServiceImplTest {
         assertThat(socio.getNumeroSolicitudOrigen()).isEqualTo("SOL-000001");
         assertThat(socio.getAdminResponsableAltaId()).isEqualTo("admin-1");
         assertThat(socio.getAdminResponsableAltaNombre()).isEqualTo("Admin Uno");
-        assertThat(socio.getCodigoQr()).isNotBlank();
 
         // Copia, no la misma instancia: editar el Socio después no debe tocar la solicitud.
         assertThat(socio.getDatosPersonaFisica()).isNotSameAs(solicitud.getDatosPersonaFisica());
@@ -175,6 +191,108 @@ class SocioServiceImplTest {
 
         verify(emailService).enviarCorreoCredencialesSocio(
                 eq("juan.garcia@example.com"), eq("García, Juan Carlos"), eq("SOC-000042"), eq("PasswordTemp1"));
+    }
+
+    private AltaManualSocioRequest altaManualFisica(String email, EstadoSocio estado) {
+        return new AltaManualSocioRequest(
+                CategoriaSocio.ACTIVO, TipoPersona.FISICA, "García, Juan Carlos", "28345678", "20-28345678-2",
+                LocalDate.of(1985, 4, 12), "Calle 123", "Depto B", "+54 9 3777123456", email, "Farmacia Central",
+                "Ruta 123 km 4", null, null, estado);
+    }
+
+    private AltaManualSocioRequest altaManualJuridica(String email) {
+        return new AltaManualSocioRequest(
+                CategoriaSocio.ADHERENTE, TipoPersona.JURIDICA, "Comercial del Sur S.A.", null, "30-71234567-9",
+                null, "Calle 123", null, "+54 9 3777123456", email, "Depósito", "Ruta 123 km 4",
+                "María Fernández", "30123456", null);
+    }
+
+    @Test
+    void crearSocioManual_personaFisica_asignaNumeroYCopiaLosDatos() {
+        AltaManualSocioRequest request = altaManualFisica("juan.garcia@example.com", null);
+
+        when(usuarioRepository.existsByEmail("juan.garcia@example.com")).thenReturn(false);
+        when(secuenciaService.siguienteValor(SocioConstantes.NOMBRE_SECUENCIA_NUMERO_SOCIO)).thenReturn(7L);
+        when(cuentaAccesoService.crearCuentaConPasswordTemporal(anyString(), anyString(), any(Rol.class), anyString()))
+                .thenReturn(cuentaFalsa("juan.garcia@example.com"));
+        doAnswerAsignarIdSocio();
+
+        SocioCreadoResponse response = service.crearSocioManual(request, "admin-1", "Admin Uno");
+
+        assertThat(response.mensaje()).isEqualTo("Socio dado de alta con éxito");
+        assertThat(response.socio().numeroSocio()).isEqualTo("SOC-000007");
+        assertThat(response.socio().categoria()).isEqualTo(CategoriaSocio.ACTIVO);
+        assertThat(response.socio().tipoPersona()).isEqualTo(TipoPersona.FISICA);
+        assertThat(response.socio().estado()).isEqualTo(EstadoSocio.ACTIVO); // sin estado explícito, default ACTIVO
+        assertThat(response.socio().datosPersonaFisica().getApellidoYNombre()).isEqualTo("García, Juan Carlos");
+        assertThat(response.socio().datosPersonaFisica().getCorreoElectronico()).isEqualTo("juan.garcia@example.com");
+    }
+
+    @Test
+    void crearSocioManual_conEstadoExplicito_respetaElEstadoElegido() {
+        AltaManualSocioRequest request = altaManualFisica("juan.garcia@example.com", EstadoSocio.INACTIVO);
+
+        when(usuarioRepository.existsByEmail(anyString())).thenReturn(false);
+        when(secuenciaService.siguienteValor(anyString())).thenReturn(1L);
+        when(cuentaAccesoService.crearCuentaConPasswordTemporal(anyString(), anyString(), any(Rol.class), anyString()))
+                .thenReturn(cuentaFalsa("juan.garcia@example.com"));
+        doAnswerAsignarIdSocio();
+
+        SocioCreadoResponse response = service.crearSocioManual(request, "admin-1", "Admin Uno");
+
+        assertThat(response.socio().estado()).isEqualTo(EstadoSocio.INACTIVO);
+    }
+
+    @Test
+    void crearSocioManual_personaJuridica_mapeaRazonSocialYResponsable() {
+        AltaManualSocioRequest request = altaManualJuridica("contacto@comercialdelsur.com");
+
+        when(usuarioRepository.existsByEmail(anyString())).thenReturn(false);
+        when(secuenciaService.siguienteValor(anyString())).thenReturn(1L);
+        when(cuentaAccesoService.crearCuentaConPasswordTemporal(anyString(), anyString(), any(Rol.class), anyString()))
+                .thenReturn(cuentaFalsa("contacto@comercialdelsur.com"));
+        doAnswerAsignarIdSocio();
+
+        SocioCreadoResponse response = service.crearSocioManual(request, "admin-1", "Admin Uno");
+
+        assertThat(response.socio().tipoPersona()).isEqualTo(TipoPersona.JURIDICA);
+        assertThat(response.socio().datosPersonaJuridica().getRazonSocial()).isEqualTo("Comercial del Sur S.A.");
+        assertThat(response.socio().datosPersonaJuridica().getNombreResponsable()).isEqualTo("María Fernández");
+        assertThat(response.socio().datosPersonaFisica()).isNull();
+    }
+
+    @Test
+    void crearSocioManual_delegaLaCreacionDeUsuarioConRolSocio() {
+        AltaManualSocioRequest request = altaManualFisica("juan.garcia@example.com", null);
+
+        when(usuarioRepository.existsByEmail(anyString())).thenReturn(false);
+        when(secuenciaService.siguienteValor(anyString())).thenReturn(1L);
+        when(cuentaAccesoService.crearCuentaConPasswordTemporal(anyString(), anyString(), any(Rol.class), anyString()))
+                .thenReturn(cuentaFalsa("juan.garcia@example.com"));
+        doAnswerAsignarIdSocio();
+
+        SocioCreadoResponse response = service.crearSocioManual(request, "admin-1", "Admin Uno");
+
+        ArgumentCaptor<String> emailCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<Rol> rolCaptor = ArgumentCaptor.forClass(Rol.class);
+        verify(cuentaAccesoService).crearCuentaConPasswordTemporal(
+                emailCaptor.capture(), anyString(), rolCaptor.capture(), anyString());
+
+        assertThat(emailCaptor.getValue()).isEqualTo("juan.garcia@example.com");
+        assertThat(rolCaptor.getValue()).isEqualTo(Rol.SOCIO);
+        verify(emailService).enviarCorreoCredencialesSocio(
+                eq("juan.garcia@example.com"), eq("García, Juan Carlos"), eq(response.socio().numeroSocio()), eq("PasswordTemp1"));
+    }
+
+    @Test
+    void crearSocioManual_emailYaRegistrado_lanzaExcepcionYNoCreaNada() {
+        AltaManualSocioRequest request = altaManualFisica("ya.registrado@example.com", null);
+        when(usuarioRepository.existsByEmail("ya.registrado@example.com")).thenReturn(true);
+
+        assertThatThrownBy(() -> service.crearSocioManual(request, "admin-1", "Admin Uno"))
+                .isInstanceOf(EmailYaRegistradoException.class);
+
+        verify(socioRepository, never()).save(any(Socio.class));
     }
 
     private Socio socioActivo(String id, String numeroSocio, String nombre) {
@@ -238,30 +356,45 @@ class SocioServiceImplTest {
     }
 
     @Test
-    void obtenerMiQr_devuelveElCodigoDelSocio() {
+    void obtenerMiQr_devuelveElTokenGeneradoYSuEstadoQr() {
         Socio socio = socioActivo("socio-1", "SOC-000001", "García, Juan Carlos");
-        socio.setCodigoQr("qr-abc-123");
         when(socioRepository.findById("socio-1")).thenReturn(Optional.of(socio));
+        LocalDate vencimiento = LocalDate.of(2026, 6, 9);
+        Instant ultimoPago = Instant.parse("2026-05-09T00:00:00Z");
+        when(estadoQrService.calcularEstado(socio)).thenReturn(
+                new EstadoQrResponse(EstadoQr.ACTIVO, "Tu QR está activo.", vencimiento, ultimoPago));
+        Instant expiraEn = Instant.parse("2026-07-27T20:31:00Z");
+        when(qrTokenService.generar("socio-1")).thenReturn(new QrTokenGenerado("token-jwt-abc", expiraEn));
 
         MiQrResponse resultado = service.obtenerMiQr("socio-1");
 
-        assertThat(resultado.codigoQr()).isEqualTo("qr-abc-123");
+        assertThat(resultado.token()).isEqualTo("token-jwt-abc");
+        assertThat(resultado.expiraEn()).isEqualTo(expiraEn);
         assertThat(resultado.numeroSocio()).isEqualTo("SOC-000001");
         assertThat(resultado.nombre()).isEqualTo("García, Juan Carlos");
+        assertThat(resultado.categoria()).isEqualTo(CategoriaSocio.ACTIVO);
+        assertThat(resultado.estado()).isEqualTo(EstadoQr.ACTIVO);
+        assertThat(resultado.mensaje()).isEqualTo("Tu QR está activo.");
+        assertThat(resultado.fechaValidez()).isEqualTo(vencimiento);
+        assertThat(resultado.ultimoPago()).isEqualTo(ultimoPago);
     }
 
     @Test
-    void obtenerMiQr_socioSinCodigoQr_loGeneraYLoPersiste() {
-        // Socios creados antes de agregar el campo codigoQr lo tienen null en Mongo.
+    void obtenerMiQr_generaUnTokenNuevoEnCadaLlamada() {
         Socio socio = socioActivo("socio-1", "SOC-000001", "García, Juan Carlos");
-        socio.setCodigoQr(null);
         when(socioRepository.findById("socio-1")).thenReturn(Optional.of(socio));
-        when(socioRepository.save(any(Socio.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(estadoQrService.calcularEstado(socio)).thenReturn(
+                new EstadoQrResponse(EstadoQr.ACTIVO, "Tu QR está activo.", null, null));
+        when(qrTokenService.generar("socio-1"))
+                .thenReturn(new QrTokenGenerado("token-1", Instant.parse("2026-07-27T20:31:00Z")))
+                .thenReturn(new QrTokenGenerado("token-2", Instant.parse("2026-07-27T20:32:00Z")));
 
-        MiQrResponse resultado = service.obtenerMiQr("socio-1");
+        MiQrResponse primero = service.obtenerMiQr("socio-1");
+        MiQrResponse segundo = service.obtenerMiQr("socio-1");
 
-        assertThat(resultado.codigoQr()).isNotBlank();
-        verify(socioRepository).save(argThat(s -> s.getCodigoQr() != null));
+        assertThat(primero.token()).isEqualTo("token-1");
+        assertThat(segundo.token()).isEqualTo("token-2");
+        verify(qrTokenService, times(2)).generar("socio-1");
     }
 
     @Test

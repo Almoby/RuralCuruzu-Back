@@ -61,6 +61,16 @@ public class HistorialBeneficio {
     @Field("comercio_nombre")
     private String comercioNombre;
 
+    /**
+     * Usuario (cuenta de acceso) del comercio que realizó la validación
+     * (documento, sección 15.6). Hoy cada Comercio tiene un único Usuario
+     * vinculado (sin cuentas separadas por empleado), pero se guarda
+     * explícito de todos modos: es lo que pide el documento, y deja el campo
+     * listo si en el futuro un comercio tiene más de una cuenta de acceso.
+     */
+    @Field("usuario_comercio_id")
+    private String usuarioComercioId;
+
     @Indexed
     @Field("socio_id")
     private String socioId;

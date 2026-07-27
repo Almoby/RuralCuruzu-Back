@@ -137,10 +137,12 @@ public class ComercioBeneficioController {
                     + "Cada beneficio se puede canjear una única vez por socio (para siempre, no por día).")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Beneficio aplicado correctamente"),
-            @ApiResponse(responseCode = "400", description = "El beneficio no está vigente (pausado o vencido)",
+            @ApiResponse(responseCode = "400", description = "El token del QR expiró (pedirle al socio que lo "
+                    + "actualice), el beneficio no está vigente (pausado o vencido), o el QR del socio no está "
+                    + "activo (dado de baja, con cuotas vencidas, o cuenta suspendida/bloqueada)",
                     content = @Content(schema = @Schema(implementation = ApiErrorResponse.class))),
-            @ApiResponse(responseCode = "404", description = "El código QR no corresponde a ningún socio, o el "
-                    + "beneficio no existe (o no es propio)",
+            @ApiResponse(responseCode = "404", description = "El token del QR no corresponde a ningún socio (o "
+                    + "está manipulado), o el beneficio no existe (o no es propio)",
                     content = @Content(schema = @Schema(implementation = ApiErrorResponse.class))),
             @ApiResponse(responseCode = "409", description = "Ese socio ya había canjeado este beneficio antes",
                     content = @Content(schema = @Schema(implementation = ApiErrorResponse.class)))
@@ -151,6 +153,6 @@ public class ComercioBeneficioController {
             @AuthenticationPrincipal AuthenticatedUser comercio) {
         String comercioId = comercio.usuario().getRefId();
         log.info("POST /api/comercio/beneficios/canjear-beneficio - comercioId={} beneficioId={}", comercioId, request.beneficioId());
-        return ResponseEntity.ok(beneficioService.validarYUsarBeneficio(comercioId, request));
+        return ResponseEntity.ok(beneficioService.validarYUsarBeneficio(comercioId, comercio.usuario().getId(), request));
     }
 }

@@ -3,6 +3,7 @@ package com.almoby.ruralcuruzu.dto.request;
 import java.time.LocalDate;
 
 import com.almoby.ruralcuruzu.enums.CategoriaSocio;
+import com.almoby.ruralcuruzu.enums.EstadoSocio;
 import com.almoby.ruralcuruzu.enums.TipoPersona;
 import com.almoby.ruralcuruzu.validation.CuitCuil;
 import com.almoby.ruralcuruzu.validation.DatosPersonaRequestValidable;
@@ -11,35 +12,33 @@ import com.almoby.ruralcuruzu.validation.Dni;
 import com.almoby.ruralcuruzu.validation.Telefono;
 
 import io.swagger.v3.oas.annotations.media.Schema;
-import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Past;
 
 /**
- * Cuerpo del formulario de "Solicitud para ser socio" (documento, sección 5),
- * aplanado según el Figma: un solo formulario con todos los campos, sin
- * anidar datosPersonaFisica/datosPersonaJuridica por separado.
+ * Cuerpo del alta manual de un socio por parte del admin (documento, sección
+ * 9.5): los mismos datos personales que el formulario público de solicitud
+ * (SolicitudSocioRequest, sección 5), pero sin pasar por una SolicitudSocio —
+ * el Socio se crea directo, con el estado que el admin elija (por defecto
+ * ACTIVO si no se envía). Comparte la misma validación cruzada
+ * física/jurídica que el formulario público, vía {@link DatosSolicitudValidos}.
  *
  * {@code apellidoYNombre} sirve tanto para el nombre de una persona física
- * como para la razón social de una persona jurídica (un solo campo en el
- * formulario, "Apellido y Nombre / Razón Social"). {@code cuit} igual: es el
- * CUIT/CUIL para ambos tipos.
- *
- * {@code documento} y {@code fechaNacimiento} solo corresponden si
- * {@code tipoPersona == FISICA}; {@code nombreResponsable} y
- * {@code dniResponsable} solo si {@code tipoPersona == JURIDICA}. Ver
- * {@link DatosSolicitudValidos} para la validación cruzada según el tipo.
+ * como para la razón social de una persona jurídica, igual que en
+ * SolicitudSocioRequest (un solo campo de texto libre, no nombre/apellido
+ * separados). {@code nombreEstablecimiento} cubre tanto el nombre de un
+ * establecimiento propio como una ocupación, también igual que allá.
  */
 @DatosSolicitudValidos
-public record SolicitudSocioRequest(
+public record AltaManualSocioRequest(
 
-        @Schema(description = "Categoría de asociación solicitada")
-        @NotNull(message = "La categoría solicitada es obligatoria")
-        CategoriaSocio categoriaSolicitada,
+        @Schema(description = "Categoría de asociación")
+        @NotNull(message = "La categoría es obligatoria")
+        CategoriaSocio categoria,
 
-        @Schema(description = "Si el solicitante es persona física o jurídica")
+        @Schema(description = "Si el socio es persona física o jurídica")
         @NotNull(message = "El tipo de persona es obligatorio")
         TipoPersona tipoPersona,
 
@@ -82,20 +81,21 @@ public record SolicitudSocioRequest(
         @NotBlank(message = "El nombre del establecimiento u ocupación es obligatorio")
         String nombreEstablecimiento,
 
-        @Schema(description = "Dirección del establecimiento, si es distinta de la dirección personal", example = "Ruta 123 km 4")
+        @Schema(description = "Dirección del establecimiento, si es distinta de la dirección personal",
+                example = "Ruta 123 km 4")
         @NotBlank(message = "La dirección del establecimiento es obligatoria")
         String direccionEstablecimiento,
 
-        @Schema(description = "Solo si tipoPersona es JURIDICA: nombre de la persona responsable", example = "María Fernández")
+        @Schema(description = "Solo si tipoPersona es JURIDICA: nombre de la persona responsable",
+                example = "María Fernández")
         String nombreResponsable,
 
         @Schema(description = "Solo si tipoPersona es JURIDICA: DNI de la persona responsable", example = "30.123.456")
         @Dni
         String dniResponsable,
 
-        @Schema(description = "El solicitante debe aceptar los términos y condiciones para poder enviar la solicitud")
-        @AssertTrue(message = "Debés aceptar los términos y condiciones para continuar")
-        boolean aceptaTerminosYCondiciones
+        @Schema(description = "Estado inicial de la membresía. Si no se envía, se da de alta como ACTIVO")
+        EstadoSocio estado
 
 ) implements DatosPersonaRequestValidable {
 }
