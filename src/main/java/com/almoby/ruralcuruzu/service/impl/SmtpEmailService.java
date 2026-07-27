@@ -134,6 +134,49 @@ public class SmtpEmailService implements EmailService {
         }
     }
 
+    @Override
+    public void enviarCorreoObservacionSolicitudSocio(String destinatario, String nombre, String numeroSolicitud, String observacion) {
+        try {
+            MimeMessage mensaje = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(mensaje, true, "UTF-8");
+
+            helper.setFrom(remitente);
+            helper.setTo(destinatario);
+            helper.setSubject("Novedades sobre tu solicitud - Rural Curuzú");
+            helper.setText(cuerpoTextoPlanoObservacion(nombre, numeroSolicitud, observacion),
+                    cuerpoHtmlObservacion(nombre, numeroSolicitud, observacion));
+
+            mailSender.send(mensaje);
+            log.info("Correo de observación de solicitud de socio enviado a email={} numeroSolicitud={}",
+                    destinatario, numeroSolicitud);
+        } catch (MessagingException | MailException ex) {
+            // La observación YA quedó guardada en el historial: que falle este
+            // aviso no debe romper la respuesta de la operación.
+            log.error("Error enviando correo de observación de solicitud a email={} numeroSolicitud={}",
+                    destinatario, numeroSolicitud, ex);
+        }
+    }
+
+    private String cuerpoTextoPlanoObservacion(String nombre, String numeroSolicitud, String observacion) {
+        return """
+                Hola %s,
+
+                Tu solicitud %s para ser socio de Rural Curuzú tiene una observación:
+                %s
+
+                Respondé este correo o contactanos para resolverla.
+                """.formatted(nombre, numeroSolicitud, observacion);
+    }
+
+    private String cuerpoHtmlObservacion(String nombre, String numeroSolicitud, String observacion) {
+        return """
+                <p>Hola %s,</p>
+                <p>Tu solicitud <strong>%s</strong> para ser socio de <strong>Rural Curuzú</strong> tiene una observación:</p>
+                <p>%s</p>
+                <p>Respondé este correo o contactanos para resolverla.</p>
+                """.formatted(nombre, numeroSolicitud, observacion);
+    }
+
     private String cuerpoTextoPlano(String nombre, String enlace) {
         return """
                 Hola %s,

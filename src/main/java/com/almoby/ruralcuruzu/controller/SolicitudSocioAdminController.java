@@ -114,9 +114,10 @@ public class SolicitudSocioAdminController {
     }
 
     @Operation(summary = "Agregar una observación a una solicitud",
-            description = "Deja una nota en el historial sin cambiar el estado de la solicitud. Sirve tanto para "
-                    + "'solicitar correcciones' como 'solicitar documentación' (documento, sección 8.3): son casos "
-                    + "de uso de una misma observación visible para el solicitante.")
+            description = "Deja una nota en el historial sin cambiar el estado de la solicitud, y le manda un "
+                    + "correo al solicitante con el texto. Sirve tanto para 'solicitar correcciones' como "
+                    + "'solicitar documentación' (documento, sección 8.3): son casos de uso de una misma "
+                    + "observación visible para el solicitante.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Observación agregada correctamente"),
             @ApiResponse(responseCode = "404", description = "No existe una solicitud con ese número",

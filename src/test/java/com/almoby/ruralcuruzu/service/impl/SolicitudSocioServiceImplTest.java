@@ -341,6 +341,8 @@ class SolicitudSocioServiceImplTest {
                         && h.getEstadoAnterior() == EstadoSolicitud.EN_REVISION
                         && h.getEstadoNuevo() == EstadoSolicitud.EN_REVISION);
         verify(solicitudSocioRepository).save(solicitud);
+        verify(emailService).enviarCorreoObservacionSolicitudSocio(
+                "juan.garcia@example.com", "García, Juan Carlos", "SOL-000001", "Falta el comprobante de domicilio");
     }
 
     @Test

@@ -93,6 +93,7 @@ public class SecurityConfig {
                         .requestMatchers(RutasApi.SOCIO_PERFIL).hasRole("SOCIO")
                         .requestMatchers(RutasApi.SOCIO_BENEFICIOS).hasRole("SOCIO")
                         .requestMatchers(RutasApi.COMERCIO_BENEFICIOS).hasRole("COMERCIO")
+                        .requestMatchers(RutasApi.ADMIN_DASHBOARD).hasRole("ADMIN")
                         .anyRequest().authenticated())
                 .exceptionHandling(handling -> handling
                         .authenticationEntryPoint(authenticationEntryPoint)

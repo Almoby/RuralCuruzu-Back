@@ -221,6 +221,9 @@ public class SolicitudSocioServiceImpl implements SolicitudSocioService {
 
         log.info("Observación agregada a numeroSolicitud={} (admin={})", numeroSolicitud, adminNombre);
 
+        emailService.enviarCorreoObservacionSolicitudSocio(
+                solicitud.getEmail(), solicitud.nombreParaMostrar(), numeroSolicitud, observacion);
+
         return ObservacionAgregadaResponse.of(numeroSolicitud);
     }
 

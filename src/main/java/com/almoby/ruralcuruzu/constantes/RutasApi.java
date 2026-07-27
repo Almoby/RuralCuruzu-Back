@@ -30,6 +30,8 @@ public final class RutasApi {
     public static final String COMERCIO_BENEFICIOS = COMERCIO_BENEFICIOS_BASE + "/**";
     public static final String SOCIO_BENEFICIOS_BASE = "/api/socio/beneficios";
     public static final String SOCIO_BENEFICIOS = SOCIO_BENEFICIOS_BASE + "/**";
+    public static final String ADMIN_DASHBOARD_BASE = "/api/admin/dashboard";
+    public static final String ADMIN_DASHBOARD = ADMIN_DASHBOARD_BASE + "/**";
 
     public static final String SWAGGER_UI_HTML = "/swagger-ui.html";
     public static final String SWAGGER_UI = "/swagger-ui/**";

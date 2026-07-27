@@ -41,6 +41,14 @@ public interface EmailService {
     void enviarCorreoRechazoSolicitudSocio(String destinatario, String nombre, String numeroSolicitud, String motivo);
 
     /**
+     * Avisa al solicitante que un admin agregó una observación a su solicitud
+     * (documento, sección 8.3: "solicitar correcciones"/"solicitar
+     * documentación" son casos de uso de esto). Sin este correo, el
+     * solicitante no tiene ninguna forma de enterarse de que le piden algo.
+     */
+    void enviarCorreoObservacionSolicitudSocio(String destinatario, String nombre, String numeroSolicitud, String observacion);
+
+    /**
      * Manda las credenciales de acceso a un Socio recién dado de alta al
      * aprobarse su solicitud (documento, sección 8.4, paso 7): incluye su
      * número de socio y una contraseña temporal que debe cambiar en el
