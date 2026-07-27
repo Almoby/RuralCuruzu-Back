@@ -45,8 +45,18 @@ public interface EmailService {
      * (documento, sección 8.3: "solicitar correcciones"/"solicitar
      * documentación" son casos de uso de esto). Sin este correo, el
      * solicitante no tiene ninguna forma de enterarse de que le piden algo.
+     * Incluye un enlace (con un token de un solo uso) para que pueda
+     * responder con texto y/o documentación sin necesitar una cuenta.
      */
-    void enviarCorreoObservacionSolicitudSocio(String destinatario, String nombre, String numeroSolicitud, String observacion);
+    void enviarCorreoObservacionSolicitudSocio(String destinatario, String nombre, String numeroSolicitud,
+                                                String observacion, String enlaceRespuesta);
+
+    /**
+     * Avisa a un admin que un solicitante respondió una observación (con o
+     * sin archivos adjuntos), para que sepa que hay algo nuevo para revisar.
+     */
+    void enviarCorreoRespuestaSolicitudRecibida(String destinatarioAdmin, String numeroSolicitud,
+                                                 String nombreSolicitante, boolean tieneArchivos);
 
     /**
      * Manda las credenciales de acceso a un Socio recién dado de alta al

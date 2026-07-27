@@ -135,7 +135,8 @@ public class SmtpEmailService implements EmailService {
     }
 
     @Override
-    public void enviarCorreoObservacionSolicitudSocio(String destinatario, String nombre, String numeroSolicitud, String observacion) {
+    public void enviarCorreoObservacionSolicitudSocio(String destinatario, String nombre, String numeroSolicitud,
+                                                        String observacion, String enlaceRespuesta) {
         try {
             MimeMessage mensaje = mailSender.createMimeMessage();
             MimeMessageHelper helper = new MimeMessageHelper(mensaje, true, "UTF-8");
@@ -143,8 +144,8 @@ public class SmtpEmailService implements EmailService {
             helper.setFrom(remitente);
             helper.setTo(destinatario);
             helper.setSubject("Novedades sobre tu solicitud - Rural Curuzú");
-            helper.setText(cuerpoTextoPlanoObservacion(nombre, numeroSolicitud, observacion),
-                    cuerpoHtmlObservacion(nombre, numeroSolicitud, observacion));
+            helper.setText(cuerpoTextoPlanoObservacion(nombre, numeroSolicitud, observacion, enlaceRespuesta),
+                    cuerpoHtmlObservacion(nombre, numeroSolicitud, observacion, enlaceRespuesta));
 
             mailSender.send(mensaje);
             log.info("Correo de observación de solicitud de socio enviado a email={} numeroSolicitud={}",
@@ -157,24 +158,62 @@ public class SmtpEmailService implements EmailService {
         }
     }
 
-    private String cuerpoTextoPlanoObservacion(String nombre, String numeroSolicitud, String observacion) {
+    private String cuerpoTextoPlanoObservacion(String nombre, String numeroSolicitud, String observacion, String enlace) {
         return """
                 Hola %s,
 
                 Tu solicitud %s para ser socio de Rural Curuzú tiene una observación:
                 %s
 
-                Respondé este correo o contactanos para resolverla.
-                """.formatted(nombre, numeroSolicitud, observacion);
+                Respondé acá (podés adjuntar documentación si hace falta): %s
+                """.formatted(nombre, numeroSolicitud, observacion, enlace);
     }
 
-    private String cuerpoHtmlObservacion(String nombre, String numeroSolicitud, String observacion) {
+    private String cuerpoHtmlObservacion(String nombre, String numeroSolicitud, String observacion, String enlace) {
         return """
                 <p>Hola %s,</p>
                 <p>Tu solicitud <strong>%s</strong> para ser socio de <strong>Rural Curuzú</strong> tiene una observación:</p>
                 <p>%s</p>
-                <p>Respondé este correo o contactanos para resolverla.</p>
-                """.formatted(nombre, numeroSolicitud, observacion);
+                <p><a href="%s">Hacé clic acá para responder</a> (podés adjuntar documentación si hace falta).</p>
+                """.formatted(nombre, numeroSolicitud, observacion, enlace);
+    }
+
+    @Override
+    public void enviarCorreoRespuestaSolicitudRecibida(String destinatarioAdmin, String numeroSolicitud,
+                                                         String nombreSolicitante, boolean tieneArchivos) {
+        try {
+            MimeMessage mensaje = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(mensaje, true, "UTF-8");
+
+            helper.setFrom(remitente);
+            helper.setTo(destinatarioAdmin);
+            helper.setSubject("Nueva respuesta en la solicitud " + numeroSolicitud + " - Rural Curuzú");
+            helper.setText(cuerpoTextoPlanoRespuestaRecibida(numeroSolicitud, nombreSolicitante, tieneArchivos),
+                    cuerpoHtmlRespuestaRecibida(numeroSolicitud, nombreSolicitante, tieneArchivos));
+
+            mailSender.send(mensaje);
+            log.info("Correo de respuesta recibida enviado a admin email={} numeroSolicitud={}",
+                    destinatarioAdmin, numeroSolicitud);
+        } catch (MessagingException | MailException ex) {
+            // La respuesta YA quedó guardada en el historial: que falle este
+            // aviso no debe romper la respuesta de la operación.
+            log.error("Error enviando correo de respuesta recibida a admin email={} numeroSolicitud={}",
+                    destinatarioAdmin, numeroSolicitud, ex);
+        }
+    }
+
+    private String cuerpoTextoPlanoRespuestaRecibida(String numeroSolicitud, String nombreSolicitante, boolean tieneArchivos) {
+        return """
+                %s respondió tu observación en la solicitud %s.%s
+                Entrá al panel de administración para revisarla.
+                """.formatted(nombreSolicitante, numeroSolicitud, tieneArchivos ? " Adjuntó documentación." : "");
+    }
+
+    private String cuerpoHtmlRespuestaRecibida(String numeroSolicitud, String nombreSolicitante, boolean tieneArchivos) {
+        return """
+                <p><strong>%s</strong> respondió tu observación en la solicitud <strong>%s</strong>.%s</p>
+                <p>Entrá al panel de administración para revisarla.</p>
+                """.formatted(nombreSolicitante, numeroSolicitud, tieneArchivos ? " Adjuntó documentación." : "");
     }
 
     private String cuerpoTextoPlano(String nombre, String enlace) {

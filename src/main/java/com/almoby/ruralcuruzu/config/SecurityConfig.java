@@ -36,6 +36,10 @@ public class SecurityConfig {
             RutasApi.REFRESH,
             // Botón "Quiero ser socio": cualquier visitante puede enviar una solicitud.
             RutasApi.SOLICITUDES_SOCIO,
+            // Responder una observación desde el link del correo: el solicitante
+            // todavía no tiene cuenta, así que se protege con el token (de un solo
+            // uso y con vencimiento) en vez de con sesión.
+            RutasApi.RESPUESTA_SOLICITUD,
             // Documentación Swagger/OpenAPI: pública para poder verla sin loguearse.
             RutasApi.SWAGGER_UI_HTML,
             RutasApi.SWAGGER_UI,

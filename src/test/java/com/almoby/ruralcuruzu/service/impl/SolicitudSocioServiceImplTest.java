@@ -9,7 +9,9 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.time.Instant;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Optional;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -17,27 +19,36 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.web.multipart.MultipartFile;
 
 import com.almoby.ruralcuruzu.constantes.SolicitudSocioConstantes;
+import com.almoby.ruralcuruzu.domain.CambioEstadoSolicitud;
 import com.almoby.ruralcuruzu.domain.SolicitudSocio;
+import com.almoby.ruralcuruzu.domain.Usuario;
 import com.almoby.ruralcuruzu.enums.CategoriaSocio;
 import com.almoby.ruralcuruzu.enums.EstadoSolicitud;
+import com.almoby.ruralcuruzu.enums.Rol;
 import com.almoby.ruralcuruzu.enums.TipoPersona;
 import com.almoby.ruralcuruzu.dto.request.CambiarEstadoSolicitudRequest;
 import com.almoby.ruralcuruzu.dto.request.SolicitudSocioRequest;
 import com.almoby.ruralcuruzu.dto.response.CambiarEstadoSolicitudResponse;
 import com.almoby.ruralcuruzu.dto.response.ObservacionAgregadaResponse;
+import com.almoby.ruralcuruzu.dto.response.ObservacionPendienteResponse;
 import com.almoby.ruralcuruzu.dto.response.SolicitudSocioCreadaResponse;
 import com.almoby.ruralcuruzu.dto.response.SolicitudSocioResponse;
 import com.almoby.ruralcuruzu.exception.DocumentoYaRegistradoException;
 import com.almoby.ruralcuruzu.exception.EmailYaRegistradoException;
 import com.almoby.ruralcuruzu.exception.SolicitudNoEncontradaException;
+import com.almoby.ruralcuruzu.exception.TokenRespuestaSolicitudInvalidoException;
 import com.almoby.ruralcuruzu.exception.TransicionEstadoInvalidaException;
 import com.almoby.ruralcuruzu.repository.SolicitudSocioRepository;
 import com.almoby.ruralcuruzu.repository.UsuarioRepository;
+import com.almoby.ruralcuruzu.service.AlmacenamientoArchivosService;
 import com.almoby.ruralcuruzu.service.EmailService;
 import com.almoby.ruralcuruzu.service.SecuenciaService;
 import com.almoby.ruralcuruzu.service.SocioService;
+import com.almoby.ruralcuruzu.service.TokenRespuestaSolicitudService;
 
 /**
  * Tests unitarios de la lógica de negocio de SolicitudSocioServiceImpl.
@@ -56,12 +67,19 @@ class SolicitudSocioServiceImplTest {
     private EmailService emailService;
     @Mock
     private SocioService socioService;
+    @Mock
+    private TokenRespuestaSolicitudService tokenRespuestaSolicitudService;
+    @Mock
+    private AlmacenamientoArchivosService almacenamientoArchivosService;
+
+    private static final String URL_BASE_RESPONDER_SOLICITUD = "http://localhost:4200/solicitudes/responder";
 
     private SolicitudSocioServiceImpl service;
 
     @BeforeEach
     void setUp() {
-        service = new SolicitudSocioServiceImpl(solicitudSocioRepository, usuarioRepository, secuenciaService, emailService, socioService);
+        service = new SolicitudSocioServiceImpl(solicitudSocioRepository, usuarioRepository, secuenciaService, emailService,
+                socioService, tokenRespuestaSolicitudService, almacenamientoArchivosService, URL_BASE_RESPONDER_SOLICITUD);
     }
 
     private SolicitudSocioRequest requestFisicaValida() {
@@ -329,6 +347,7 @@ class SolicitudSocioServiceImplTest {
         SolicitudSocio solicitud = solicitudPendiente();
         solicitud.setEstado(EstadoSolicitud.EN_REVISION);
         when(solicitudSocioRepository.findByNumeroSolicitud("SOL-000001")).thenReturn(Optional.of(solicitud));
+        when(tokenRespuestaSolicitudService.generar("SOL-000001")).thenReturn("token-plano-abc");
 
         ObservacionAgregadaResponse response = service.agregarObservacion(
                 "SOL-000001", "Falta el comprobante de domicilio", "admin-1", "Admin Uno");
@@ -342,7 +361,8 @@ class SolicitudSocioServiceImplTest {
                         && h.getEstadoNuevo() == EstadoSolicitud.EN_REVISION);
         verify(solicitudSocioRepository).save(solicitud);
         verify(emailService).enviarCorreoObservacionSolicitudSocio(
-                "juan.garcia@example.com", "García, Juan Carlos", "SOL-000001", "Falta el comprobante de domicilio");
+                "juan.garcia@example.com", "García, Juan Carlos", "SOL-000001", "Falta el comprobante de domicilio",
+                "http://localhost:4200/solicitudes/responder?token=token-plano-abc");
     }
 
     @Test
@@ -351,6 +371,88 @@ class SolicitudSocioServiceImplTest {
 
         assertThatThrownBy(() -> service.agregarObservacion("SOL-999999", "obs", "admin-1", "Admin Uno"))
                 .isInstanceOf(SolicitudNoEncontradaException.class);
+    }
+
+    @Test
+    void consultarObservacionPendiente_conTokenValido_devuelveLaUltimaObservacionDeAdmin() {
+        when(tokenRespuestaSolicitudService.validarYObtenerNumeroSolicitud("token-abc")).thenReturn("SOL-000001");
+        SolicitudSocio solicitud = solicitudPendiente();
+
+        CambioEstadoSolicitud observacionVieja = new CambioEstadoSolicitud();
+        observacionVieja.setAdminResponsableId("admin-1");
+        observacionVieja.setObservacion("Falta el DNI");
+        observacionVieja.setFechaHora(Instant.parse("2026-01-01T10:00:00Z"));
+        solicitud.getHistorial().add(observacionVieja);
+
+        CambioEstadoSolicitud observacionReciente = new CambioEstadoSolicitud();
+        observacionReciente.setAdminResponsableId("admin-1");
+        observacionReciente.setObservacion("Falta el comprobante de domicilio");
+        observacionReciente.setFechaHora(Instant.parse("2026-02-01T10:00:00Z"));
+        solicitud.getHistorial().add(observacionReciente);
+
+        when(solicitudSocioRepository.findByNumeroSolicitud("SOL-000001")).thenReturn(Optional.of(solicitud));
+
+        ObservacionPendienteResponse response = service.consultarObservacionPendiente("token-abc");
+
+        assertThat(response.numeroSolicitud()).isEqualTo("SOL-000001");
+        assertThat(response.nombreSolicitante()).isEqualTo("García, Juan Carlos");
+        assertThat(response.observacion()).isEqualTo("Falta el comprobante de domicilio");
+    }
+
+    @Test
+    void consultarObservacionPendiente_tokenInvalido_propagaLaExcepcion() {
+        when(tokenRespuestaSolicitudService.validarYObtenerNumeroSolicitud("token-invalido"))
+                .thenThrow(new TokenRespuestaSolicitudInvalidoException());
+
+        assertThatThrownBy(() -> service.consultarObservacionPendiente("token-invalido"))
+                .isInstanceOf(TokenRespuestaSolicitudInvalidoException.class);
+        verify(solicitudSocioRepository, never()).findByNumeroSolicitud(anyString());
+    }
+
+    @Test
+    void responderObservacion_conArchivos_losGuardaMarcaElTokenUsadoYAvisaATodosLosAdmins() {
+        when(tokenRespuestaSolicitudService.validarYObtenerNumeroSolicitud("token-abc")).thenReturn("SOL-000001");
+        SolicitudSocio solicitud = solicitudPendiente();
+        when(solicitudSocioRepository.findByNumeroSolicitud("SOL-000001")).thenReturn(Optional.of(solicitud));
+
+        MultipartFile archivo = new MockMultipartFile(
+                "archivo", "comprobante.pdf", "application/pdf", "contenido".getBytes());
+        List<MultipartFile> archivos = List.of(archivo);
+        List<String> rutasGuardadas = List.of("SOL-000001/uuid-1_comprobante.pdf");
+        when(almacenamientoArchivosService.guardarTodos("SOL-000001", archivos)).thenReturn(rutasGuardadas);
+
+        Usuario admin1 = Usuario.builder().email("admin1@ruralcuruzu.com").rol(Rol.ADMIN).build();
+        Usuario admin2 = Usuario.builder().email("admin2@ruralcuruzu.com").rol(Rol.ADMIN).build();
+        when(usuarioRepository.findByRol(Rol.ADMIN)).thenReturn(List.of(admin1, admin2));
+
+        service.responderObservacion("token-abc", "Acá va el comprobante que faltaba", archivos);
+
+        assertThat(solicitud.getHistorial()).anyMatch(h ->
+                "Acá va el comprobante que faltaba".equals(h.getObservacion())
+                        && h.getAdminResponsableId() == null
+                        && rutasGuardadas.equals(h.getArchivosAdjuntos()));
+        verify(solicitudSocioRepository).save(solicitud);
+        verify(tokenRespuestaSolicitudService).marcarComoUsado("token-abc");
+        verify(emailService).enviarCorreoRespuestaSolicitudRecibida(
+                "admin1@ruralcuruzu.com", "SOL-000001", "García, Juan Carlos", true);
+        verify(emailService).enviarCorreoRespuestaSolicitudRecibida(
+                "admin2@ruralcuruzu.com", "SOL-000001", "García, Juan Carlos", true);
+    }
+
+    @Test
+    void responderObservacion_sinArchivos_noLlamaAlAlmacenamientoYAvisaSinArchivos() {
+        when(tokenRespuestaSolicitudService.validarYObtenerNumeroSolicitud("token-abc")).thenReturn("SOL-000001");
+        SolicitudSocio solicitud = solicitudPendiente();
+        when(solicitudSocioRepository.findByNumeroSolicitud("SOL-000001")).thenReturn(Optional.of(solicitud));
+        when(usuarioRepository.findByRol(Rol.ADMIN)).thenReturn(List.of());
+
+        service.responderObservacion("token-abc", "No tengo archivos para adjuntar", List.of());
+
+        verify(almacenamientoArchivosService, never()).guardarTodos(anyString(), any());
+        assertThat(solicitud.getHistorial()).anyMatch(h ->
+                "No tengo archivos para adjuntar".equals(h.getObservacion())
+                        && h.getArchivosAdjuntos().isEmpty());
+        verify(tokenRespuestaSolicitudService).marcarComoUsado("token-abc");
     }
 
     private SolicitudSocio solicitudPendiente() {

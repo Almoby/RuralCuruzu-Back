@@ -1,6 +1,7 @@
 package com.almoby.ruralcuruzu.domain;
 
 import java.time.Instant;
+import java.util.List;
 
 import org.springframework.data.mongodb.core.mapping.Field;
 
@@ -50,4 +51,12 @@ public class CambioEstadoSolicitud {
 
     @Field("motivo")
     private String motivo;
+
+    /**
+     * Rutas de almacenamiento (no URLs públicas) de los archivos que el
+     * solicitante adjuntó al responder una observación vía el link del
+     * correo. Vacío/null en el resto de las entradas del historial.
+     */
+    @Field("archivos_adjuntos")
+    private List<String> archivosAdjuntos;
 }

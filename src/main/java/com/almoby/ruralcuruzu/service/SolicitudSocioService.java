@@ -2,11 +2,14 @@ package com.almoby.ruralcuruzu.service;
 
 import java.util.List;
 
+import org.springframework.web.multipart.MultipartFile;
+
 import com.almoby.ruralcuruzu.enums.EstadoSolicitud;
 import com.almoby.ruralcuruzu.dto.request.CambiarEstadoSolicitudRequest;
 import com.almoby.ruralcuruzu.dto.request.SolicitudSocioRequest;
 import com.almoby.ruralcuruzu.dto.response.CambiarEstadoSolicitudResponse;
 import com.almoby.ruralcuruzu.dto.response.ObservacionAgregadaResponse;
+import com.almoby.ruralcuruzu.dto.response.ObservacionPendienteResponse;
 import com.almoby.ruralcuruzu.dto.response.SolicitudSocioCreadaResponse;
 import com.almoby.ruralcuruzu.dto.response.SolicitudSocioResponse;
 import com.almoby.ruralcuruzu.dto.response.SolicitudSocioResumenResponse;
@@ -38,4 +41,18 @@ public interface SolicitudSocioService {
      */
     ObservacionAgregadaResponse agregarObservacion(String numeroSolicitud, String observacion,
                                                     String adminId, String adminNombre);
+
+    /**
+     * Ruta pública sin login: valida el token del correo y devuelve la
+     * última observación dejada por un admin, para mostrarle al solicitante
+     * a qué está respondiendo.
+     */
+    ObservacionPendienteResponse consultarObservacionPendiente(String tokenPlano);
+
+    /**
+     * Ruta pública sin login: el solicitante responde una observación con
+     * texto y, opcionalmente, archivos adjuntos (documentación). Queda
+     * registrado en el historial y se avisa a los admins por correo.
+     */
+    void responderObservacion(String tokenPlano, String texto, List<MultipartFile> archivos);
 }

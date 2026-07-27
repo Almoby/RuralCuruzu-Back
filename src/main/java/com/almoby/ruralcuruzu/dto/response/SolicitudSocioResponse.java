@@ -45,7 +45,12 @@ public record SolicitudSocioResponse(
             Instant fechaHora,
             String adminResponsableNombre,
             String observacion,
-            String motivo
+            String motivo,
+
+            @Schema(description = "Rutas de los archivos que el solicitante adjuntó al responder una observación "
+                    + "(vacío en el resto de las entradas del historial). Usar tal cual con el endpoint de "
+                    + "descarga del admin.")
+            List<String> archivosAdjuntos
     ) {
     }
 
@@ -57,7 +62,8 @@ public record SolicitudSocioResponse(
                         cambio.getFechaHora(),
                         cambio.getAdminResponsableNombre(),
                         cambio.getObservacion(),
-                        cambio.getMotivo()))
+                        cambio.getMotivo(),
+                        cambio.getArchivosAdjuntos()))
                 .toList();
 
         return new SolicitudSocioResponse(

@@ -32,6 +32,9 @@ public final class RutasApi {
     public static final String SOCIO_BENEFICIOS = SOCIO_BENEFICIOS_BASE + "/**";
     public static final String ADMIN_DASHBOARD_BASE = "/api/admin/dashboard";
     public static final String ADMIN_DASHBOARD = ADMIN_DASHBOARD_BASE + "/**";
+    /** Ruta pública sin login: el solicitante responde una observación desde el link del correo. */
+    public static final String RESPUESTA_SOLICITUD_BASE = "/api/respuesta-solicitud";
+    public static final String RESPUESTA_SOLICITUD = RESPUESTA_SOLICITUD_BASE + "/**";
 
     public static final String SWAGGER_UI_HTML = "/swagger-ui.html";
     public static final String SWAGGER_UI = "/swagger-ui/**";

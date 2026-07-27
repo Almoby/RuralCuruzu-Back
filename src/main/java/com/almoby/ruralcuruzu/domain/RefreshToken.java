@@ -14,8 +14,10 @@ import lombok.Setter;
 
 /**
  * Token de larga duración para renovar el access token (JWT) sin pedirle
- * al usuario que vuelva a loguearse cada hora. Igual que PasswordResetToken,
+ * al usuario que vuelva a loguearse cada hora. Igual que {@link TokenUnSoloUso},
  * el {@code _id} es el hash SHA-256 del valor real (nunca se guarda en texto plano).
+ * No reutiliza esa clase porque un refresh token no es "de un solo uso": vive hasta
+ * que expira o se revoca explícitamente, no se consume al validarlo una vez.
  *
  * Rotación: cada vez que se usa para renovar, se marca {@code revocado=true}
  * y se emite uno nuevo (ver RefreshTokenService). Si alguien intenta reusar

@@ -1,7 +1,15 @@
 package com.almoby.ruralcuruzu.controller;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
+import java.util.stream.Stream;
 
+import org.springframework.core.io.FileSystemResource;
+import org.springframework.core.io.Resource;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -22,7 +30,9 @@ import com.almoby.ruralcuruzu.dto.response.ObservacionAgregadaResponse;
 import com.almoby.ruralcuruzu.dto.response.SolicitudSocioResponse;
 import com.almoby.ruralcuruzu.dto.response.SolicitudSocioResumenResponse;
 import com.almoby.ruralcuruzu.exception.ApiErrorResponse;
+import com.almoby.ruralcuruzu.exception.ArchivoInvalidoException;
 import com.almoby.ruralcuruzu.security.AuthenticatedUser;
+import com.almoby.ruralcuruzu.service.AlmacenamientoArchivosService;
 import com.almoby.ruralcuruzu.service.SolicitudSocioService;
 
 import io.swagger.v3.oas.annotations.Operation;
@@ -48,9 +58,12 @@ import lombok.extern.slf4j.Slf4j;
 public class SolicitudSocioAdminController {
 
     private final SolicitudSocioService solicitudSocioService;
+    private final AlmacenamientoArchivosService almacenamientoArchivosService;
 
-    public SolicitudSocioAdminController(SolicitudSocioService solicitudSocioService) {
+    public SolicitudSocioAdminController(SolicitudSocioService solicitudSocioService,
+                                          AlmacenamientoArchivosService almacenamientoArchivosService) {
         this.solicitudSocioService = solicitudSocioService;
+        this.almacenamientoArchivosService = almacenamientoArchivosService;
     }
 
     @Operation(summary = "Listar solicitudes de socio",
@@ -134,5 +147,62 @@ public class SolicitudSocioAdminController {
                 numeroSolicitud, request.observacion(), admin.usuario().getId(), admin.usuario().getNombre());
 
         return ResponseEntity.ok(response);
+    }
+
+    @Operation(summary = "Descargar un archivo adjunto de una solicitud",
+            description = "Descarga documentación que el solicitante adjuntó al responder una observación (link "
+                    + "del correo, ver POST /api/respuesta-solicitud). `ruta` tiene que ser exactamente uno de "
+                    + "los valores que aparecen en `archivosAdjuntos` del historial de esta misma solicitud "
+                    + "(GET /{numeroSolicitud}).")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Archivo encontrado"),
+            @ApiResponse(responseCode = "400", description = "La ruta indicada no corresponde a un archivo "
+                    + "adjunto de esta solicitud, o el archivo ya no existe en disco",
+                    content = @Content(schema = @Schema(implementation = ApiErrorResponse.class))),
+            @ApiResponse(responseCode = "404", description = "No existe una solicitud con ese número",
+                    content = @Content(schema = @Schema(implementation = ApiErrorResponse.class)))
+    })
+    @GetMapping("/{numeroSolicitud}/archivos")
+    public ResponseEntity<Resource> descargarArchivo(
+            @PathVariable String numeroSolicitud,
+            @RequestParam String ruta,
+            @AuthenticationPrincipal AuthenticatedUser admin) {
+        log.info("GET /api/admin/solicitudes-socio/{}/archivos - admin={} ruta={}",
+                numeroSolicitud, admin.usuario().getEmail(), ruta);
+
+        // No alcanza con que el token del admin sea válido: además verificamos que
+        // la ruta pedida realmente pertenezca al historial de ESTA solicitud, para
+        // que nadie pueda descargar documentación de otra solicitud adivinando rutas.
+        SolicitudSocioResponse solicitud = solicitudSocioService.obtenerSolicitudSocioPorNumero(numeroSolicitud);
+        boolean rutaPerteneceALaSolicitud = solicitud.historial().stream()
+                .flatMap(cambio -> cambio.archivosAdjuntos() == null ? Stream.empty() : cambio.archivosAdjuntos().stream())
+                .anyMatch(ruta::equals);
+        if (!rutaPerteneceALaSolicitud) {
+            log.warn("Descarga rechazada: ruta={} no pertenece al historial de numeroSolicitud={}", ruta, numeroSolicitud);
+            throw new ArchivoInvalidoException("El archivo solicitado no pertenece a esta solicitud");
+        }
+
+        Path archivo = almacenamientoArchivosService.resolverParaDescarga(ruta);
+        Resource recurso = new FileSystemResource(archivo);
+
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + nombreParaDescarga(archivo) + "\"")
+                .contentType(tipoDeContenido(archivo))
+                .body(recurso);
+    }
+
+    /** Le saca el prefijo UUID_ con el que se guardó el archivo, para que el admin vea el nombre original. */
+    private String nombreParaDescarga(Path archivo) {
+        return archivo.getFileName().toString().replaceFirst(
+                "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}_", "");
+    }
+
+    private MediaType tipoDeContenido(Path archivo) {
+        try {
+            String contentType = Files.probeContentType(archivo);
+            return contentType != null ? MediaType.parseMediaType(contentType) : MediaType.APPLICATION_OCTET_STREAM;
+        } catch (IOException ex) {
+            return MediaType.APPLICATION_OCTET_STREAM;
+        }
     }
 }

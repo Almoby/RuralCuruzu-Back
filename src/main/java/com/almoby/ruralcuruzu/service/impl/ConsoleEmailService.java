@@ -86,16 +86,31 @@ public class ConsoleEmailService implements EmailService {
     }
 
     @Override
-    public void enviarCorreoObservacionSolicitudSocio(String destinatario, String nombre, String numeroSolicitud, String observacion) {
+    public void enviarCorreoObservacionSolicitudSocio(String destinatario, String nombre, String numeroSolicitud,
+                                                        String observacion, String enlaceRespuesta) {
         log.info("""
                 ==================== EMAIL (simulado) ====================
                 Para: {}
                 Asunto: Novedades sobre tu solicitud - Rural Curuzú
                 Hola {},
                 Tu solicitud {} tiene una observación: {}
-                Respondé este correo o contactanos para resolverla.
+                Respondé acá (podés adjuntar documentación): {}
                 ============================================================""",
-                destinatario, nombre, numeroSolicitud, observacion);
+                destinatario, nombre, numeroSolicitud, observacion, enlaceRespuesta);
+    }
+
+    @Override
+    public void enviarCorreoRespuestaSolicitudRecibida(String destinatarioAdmin, String numeroSolicitud,
+                                                         String nombreSolicitante, boolean tieneArchivos) {
+        log.info("""
+                ==================== EMAIL (simulado) ====================
+                Para: {}
+                Asunto: Nueva respuesta en la solicitud {} - Rural Curuzú
+                {} respondió tu observación en la solicitud {}.{}
+                Entrá al panel de administración para revisarla.
+                ============================================================""",
+                destinatarioAdmin, numeroSolicitud, nombreSolicitante, numeroSolicitud,
+                tieneArchivos ? " Adjuntó documentación." : "");
     }
 
     @Override

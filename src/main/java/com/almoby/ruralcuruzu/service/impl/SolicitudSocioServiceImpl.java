@@ -1,25 +1,31 @@
 package com.almoby.ruralcuruzu.service.impl;
 
 import java.time.Instant;
+import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
 
 import com.almoby.ruralcuruzu.constantes.SolicitudSocioConstantes;
 import com.almoby.ruralcuruzu.domain.CambioEstadoSolicitud;
 import com.almoby.ruralcuruzu.domain.DatosPersonaFisica;
 import com.almoby.ruralcuruzu.domain.DatosPersonaJuridica;
 import com.almoby.ruralcuruzu.domain.SolicitudSocio;
+import com.almoby.ruralcuruzu.domain.Usuario;
 import com.almoby.ruralcuruzu.enums.EstadoSolicitud;
+import com.almoby.ruralcuruzu.enums.Rol;
 import com.almoby.ruralcuruzu.enums.TipoPersona;
 import com.almoby.ruralcuruzu.dto.request.CambiarEstadoSolicitudRequest;
 import com.almoby.ruralcuruzu.dto.request.SolicitudSocioRequest;
 import com.almoby.ruralcuruzu.dto.response.CambiarEstadoSolicitudResponse;
 import com.almoby.ruralcuruzu.dto.response.ObservacionAgregadaResponse;
+import com.almoby.ruralcuruzu.dto.response.ObservacionPendienteResponse;
 import com.almoby.ruralcuruzu.dto.response.SolicitudSocioCreadaResponse;
 import com.almoby.ruralcuruzu.dto.response.SolicitudSocioResponse;
 import com.almoby.ruralcuruzu.dto.response.SolicitudSocioResumenResponse;
@@ -29,10 +35,12 @@ import com.almoby.ruralcuruzu.exception.SolicitudNoEncontradaException;
 import com.almoby.ruralcuruzu.exception.TransicionEstadoInvalidaException;
 import com.almoby.ruralcuruzu.repository.SolicitudSocioRepository;
 import com.almoby.ruralcuruzu.repository.UsuarioRepository;
+import com.almoby.ruralcuruzu.service.AlmacenamientoArchivosService;
 import com.almoby.ruralcuruzu.service.EmailService;
 import com.almoby.ruralcuruzu.service.SecuenciaService;
 import com.almoby.ruralcuruzu.service.SocioService;
 import com.almoby.ruralcuruzu.service.SolicitudSocioService;
+import com.almoby.ruralcuruzu.service.TokenRespuestaSolicitudService;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -85,17 +93,27 @@ public class SolicitudSocioServiceImpl implements SolicitudSocioService {
     private final SecuenciaService secuenciaService;
     private final EmailService emailService;
     private final SocioService socioService;
+    private final TokenRespuestaSolicitudService tokenRespuestaSolicitudService;
+    private final AlmacenamientoArchivosService almacenamientoArchivosService;
+    private final String urlBaseResponderSolicitud;
 
     public SolicitudSocioServiceImpl(SolicitudSocioRepository solicitudSocioRepository,
                                       UsuarioRepository usuarioRepository,
                                       SecuenciaService secuenciaService,
                                       EmailService emailService,
-                                      SocioService socioService) {
+                                      SocioService socioService,
+                                      TokenRespuestaSolicitudService tokenRespuestaSolicitudService,
+                                      AlmacenamientoArchivosService almacenamientoArchivosService,
+                                      @Value("${app.frontend.responder-solicitud-url:http://localhost:4200/solicitudes/responder}")
+                                      String urlBaseResponderSolicitud) {
         this.solicitudSocioRepository = solicitudSocioRepository;
         this.usuarioRepository = usuarioRepository;
         this.secuenciaService = secuenciaService;
         this.emailService = emailService;
         this.socioService = socioService;
+        this.tokenRespuestaSolicitudService = tokenRespuestaSolicitudService;
+        this.almacenamientoArchivosService = almacenamientoArchivosService;
+        this.urlBaseResponderSolicitud = urlBaseResponderSolicitud;
     }
 
     @Override
@@ -221,10 +239,65 @@ public class SolicitudSocioServiceImpl implements SolicitudSocioService {
 
         log.info("Observación agregada a numeroSolicitud={} (admin={})", numeroSolicitud, adminNombre);
 
+        String tokenPlano = tokenRespuestaSolicitudService.generar(numeroSolicitud);
+        String enlaceRespuesta = urlBaseResponderSolicitud + "?token=" + tokenPlano;
         emailService.enviarCorreoObservacionSolicitudSocio(
-                solicitud.getEmail(), solicitud.nombreParaMostrar(), numeroSolicitud, observacion);
+                solicitud.getEmail(), solicitud.nombreParaMostrar(), numeroSolicitud, observacion, enlaceRespuesta);
 
         return ObservacionAgregadaResponse.of(numeroSolicitud);
+    }
+
+    @Override
+    public ObservacionPendienteResponse consultarObservacionPendiente(String tokenPlano) {
+        String numeroSolicitud = tokenRespuestaSolicitudService.validarYObtenerNumeroSolicitud(tokenPlano);
+        SolicitudSocio solicitud = buscarOFallar(numeroSolicitud);
+
+        CambioEstadoSolicitud ultimaObservacionDeAdmin = solicitud.getHistorial().stream()
+                .filter(cambio -> cambio.getAdminResponsableId() != null && cambio.getObservacion() != null)
+                .max(Comparator.comparing(CambioEstadoSolicitud::getFechaHora))
+                .orElse(null);
+
+        return new ObservacionPendienteResponse(
+                numeroSolicitud,
+                solicitud.nombreParaMostrar(),
+                ultimaObservacionDeAdmin != null ? ultimaObservacionDeAdmin.getObservacion() : null,
+                ultimaObservacionDeAdmin != null ? ultimaObservacionDeAdmin.getFechaHora() : null);
+    }
+
+    @Override
+    public void responderObservacion(String tokenPlano, String texto, List<MultipartFile> archivos) {
+        String numeroSolicitud = tokenRespuestaSolicitudService.validarYObtenerNumeroSolicitud(tokenPlano);
+        SolicitudSocio solicitud = buscarOFallar(numeroSolicitud);
+
+        List<String> archivosGuardados = (archivos == null || archivos.isEmpty())
+                ? List.of()
+                : almacenamientoArchivosService.guardarTodos(numeroSolicitud, archivos);
+
+        Instant ahora = Instant.now();
+        CambioEstadoSolicitud entrada = new CambioEstadoSolicitud();
+        entrada.setEstadoAnterior(solicitud.getEstado());
+        entrada.setEstadoNuevo(solicitud.getEstado());
+        entrada.setFechaHora(ahora);
+        entrada.setObservacion(texto);
+        entrada.setArchivosAdjuntos(archivosGuardados);
+        // adminResponsableId queda null a propósito: este cambio lo generó el
+        // propio solicitante, no un admin (mismo criterio que el alta inicial).
+
+        solicitud.getHistorial().add(entrada);
+        solicitud.setFechaActualizacion(ahora);
+        solicitudSocioRepository.save(solicitud);
+
+        // El token es de un solo uso: se consume recién acá, después de guardar
+        // con éxito, para no invalidarlo si algo falla antes.
+        tokenRespuestaSolicitudService.marcarComoUsado(tokenPlano);
+
+        log.info("Respuesta de solicitante recibida numeroSolicitud={} archivos={}",
+                numeroSolicitud, archivosGuardados.size());
+
+        boolean tieneArchivos = !archivosGuardados.isEmpty();
+        usuarioRepository.findByRol(Rol.ADMIN).forEach(admin ->
+                emailService.enviarCorreoRespuestaSolicitudRecibida(
+                        admin.getEmail(), numeroSolicitud, solicitud.nombreParaMostrar(), tieneArchivos));
     }
 
     private SolicitudSocio buscarOFallar(String numeroSolicitud) {

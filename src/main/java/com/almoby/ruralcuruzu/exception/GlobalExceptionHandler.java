@@ -12,6 +12,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import com.almoby.ruralcuruzu.exception.ApiErrorResponse.CampoError;
@@ -74,6 +75,34 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiErrorResponse> handleTokenRecuperacionExpirado(TokenRecuperacionExpiradoException ex,
                                                                              HttpServletRequest request) {
         log.warn("Recuperación de contraseña rechazada [{}]: {}", request.getRequestURI(), ex.getMessage());
+        return responder(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(ArchivoInvalidoException.class)
+    public ResponseEntity<ApiErrorResponse> handleArchivoInvalido(ArchivoInvalidoException ex,
+                                                                     HttpServletRequest request) {
+        log.warn("Archivo adjunto rechazado [{}]: {}", request.getRequestURI(), ex.getMessage());
+        return responder(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<ApiErrorResponse> handleArchivoDemasiadoGrande(
+            MaxUploadSizeExceededException ex, HttpServletRequest request) {
+        log.warn("Archivo adjunto rechazado por tamaño [{}]", request.getRequestURI());
+        return responder(HttpStatus.PAYLOAD_TOO_LARGE, "El archivo (o el conjunto de archivos) es demasiado grande", request);
+    }
+
+    @ExceptionHandler(TokenRespuestaSolicitudInvalidoException.class)
+    public ResponseEntity<ApiErrorResponse> handleTokenRespuestaSolicitudInvalido(TokenRespuestaSolicitudInvalidoException ex,
+                                                                                     HttpServletRequest request) {
+        log.warn("Respuesta a solicitud rechazada [{}]: {}", request.getRequestURI(), ex.getMessage());
+        return responder(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(TokenRespuestaSolicitudExpiradoException.class)
+    public ResponseEntity<ApiErrorResponse> handleTokenRespuestaSolicitudExpirado(TokenRespuestaSolicitudExpiradoException ex,
+                                                                                     HttpServletRequest request) {
+        log.warn("Respuesta a solicitud rechazada [{}]: {}", request.getRequestURI(), ex.getMessage());
         return responder(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
     }
 
