@@ -108,7 +108,7 @@ class ComprobanteServiceImplTest {
         assertThat(resultado).isPresent();
         assertThat(resultado.get().getOrigen()).isEqualTo(OrigenComprobante.SUBIDO_POR_SOCIO);
         assertThat(resultado.get().getRuta()).isEqualTo("pago-1/uuid_viejo.pdf");
-        assertThat(resultado.get().getNombreArchivo()).isEqualTo("viejo.pdf");
+        assertThat(resultado.get().getNombreArchivo()).isEqualTo("uuid_viejo.pdf");
         verify(comprobanteRepository).save(any(Comprobante.class));
         verify(comprobantePagoPdfService, never()).generarConstancia(any());
     }

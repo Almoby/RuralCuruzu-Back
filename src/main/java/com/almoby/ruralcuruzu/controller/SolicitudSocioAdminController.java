@@ -1,7 +1,5 @@
 package com.almoby.ruralcuruzu.controller;
 
-import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.stream.Stream;
@@ -34,6 +32,7 @@ import com.almoby.ruralcuruzu.exception.ArchivoInvalidoException;
 import com.almoby.ruralcuruzu.security.AuthenticatedUser;
 import com.almoby.ruralcuruzu.service.AlmacenamientoArchivosService;
 import com.almoby.ruralcuruzu.service.SolicitudSocioService;
+import com.almoby.ruralcuruzu.util.ArchivoDescargaUtil;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -186,23 +185,8 @@ public class SolicitudSocioAdminController {
         Resource recurso = new FileSystemResource(archivo);
 
         return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + nombreParaDescarga(archivo) + "\"")
-                .contentType(tipoDeContenido(archivo))
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + ArchivoDescargaUtil.nombreParaDescarga(archivo) + "\"")
+                .contentType(ArchivoDescargaUtil.tipoDeContenido(archivo))
                 .body(recurso);
-    }
-
-    /** Le saca el prefijo UUID_ con el que se guardó el archivo, para que el admin vea el nombre original. */
-    private String nombreParaDescarga(Path archivo) {
-        return archivo.getFileName().toString().replaceFirst(
-                "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}_", "");
-    }
-
-    private MediaType tipoDeContenido(Path archivo) {
-        try {
-            String contentType = Files.probeContentType(archivo);
-            return contentType != null ? MediaType.parseMediaType(contentType) : MediaType.APPLICATION_OCTET_STREAM;
-        } catch (IOException ex) {
-            return MediaType.APPLICATION_OCTET_STREAM;
-        }
     }
 }

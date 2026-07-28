@@ -1,7 +1,5 @@
 package com.almoby.ruralcuruzu.controller;
 
-import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
@@ -34,6 +32,7 @@ import com.almoby.ruralcuruzu.service.AlmacenamientoComprobantesService;
 import com.almoby.ruralcuruzu.service.ComprobanteService;
 import com.almoby.ruralcuruzu.service.CuotaService;
 import com.almoby.ruralcuruzu.service.DatosBancariosService;
+import com.almoby.ruralcuruzu.util.ArchivoDescargaUtil;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -185,10 +184,10 @@ public class CuotaSocioController {
         Resource recurso = new FileSystemResource(archivo);
         MediaType contentType = comprobante.getContentType() != null
                 ? MediaType.parseMediaType(comprobante.getContentType())
-                : tipoDeContenido(archivo);
+                : ArchivoDescargaUtil.tipoDeContenido(archivo);
         String nombreDescarga = comprobante.getNombreArchivo() != null
                 ? comprobante.getNombreArchivo()
-                : nombreParaDescarga(archivo);
+                : ArchivoDescargaUtil.nombreParaDescarga(archivo);
 
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + nombreDescarga + "\"")
@@ -208,20 +207,5 @@ public class CuotaSocioController {
     public ResponseEntity<DatosBancariosResponse> datosBancarios() {
         log.info("GET /api/socio/cuotas/datos-bancarios");
         return ResponseEntity.ok(datosBancariosService.obtener());
-    }
-
-    /** Le saca el prefijo UUID_ con el que se guardó el archivo, para que el socio vea el nombre original. */
-    private String nombreParaDescarga(Path archivo) {
-        return archivo.getFileName().toString().replaceFirst(
-                "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}_", "");
-    }
-
-    private MediaType tipoDeContenido(Path archivo) {
-        try {
-            String contentType = Files.probeContentType(archivo);
-            return contentType != null ? MediaType.parseMediaType(contentType) : MediaType.APPLICATION_OCTET_STREAM;
-        } catch (IOException ex) {
-            return MediaType.APPLICATION_OCTET_STREAM;
-        }
     }
 }
