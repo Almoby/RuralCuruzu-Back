@@ -85,6 +85,35 @@ public class AlmacenamientoComprobantesService {
         }
     }
 
+    /**
+     * Igual que {@link #guardar}, pero para un contenido ya generado en memoria (ej. la
+     * constancia en PDF de {@code ComprobantePagoPdfService}) en vez de un
+     * {@link MultipartFile} subido por el socio: no hay tipo que validar, ya lo decide
+     * quien la genera.
+     */
+    public String guardarBytes(String pagoId, String nombreArchivo, byte[] contenido) {
+        String nombreSanitizado = sanitizar(nombreArchivo);
+        String nombreGuardado = UUID.randomUUID() + "_" + nombreSanitizado;
+        String rutaRelativa = pagoId + "/" + nombreGuardado;
+
+        try {
+            Path carpetaPago = directorioBase.resolve(pagoId).normalize();
+            if (!carpetaPago.startsWith(directorioBase)) {
+                throw new ArchivoInvalidoException("Id de pago inválido");
+            }
+            Files.createDirectories(carpetaPago);
+
+            Path destino = carpetaPago.resolve(nombreGuardado);
+            Files.write(destino, contenido);
+
+            log.info("Comprobante generado guardado pagoId={} archivo={}", pagoId, nombreGuardado);
+            return rutaRelativa;
+        } catch (IOException ex) {
+            log.error("Error guardando comprobante generado pagoId={} nombreArchivo={}", pagoId, nombreArchivo, ex);
+            throw new IllegalStateException("No se pudo guardar la constancia de pago generada", ex);
+        }
+    }
+
     /** Devuelve el archivo en disco a partir de la ruta relativa guardada, para descargarlo. */
     public Path resolverParaDescarga(String rutaRelativa) {
         Path ruta = directorioBase.resolve(rutaRelativa).normalize();

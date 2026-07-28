@@ -63,6 +63,7 @@ import com.almoby.ruralcuruzu.repository.PagoRepository;
 import com.almoby.ruralcuruzu.repository.ReglaCuotaRepository;
 import com.almoby.ruralcuruzu.repository.SocioRepository;
 import com.almoby.ruralcuruzu.service.AlmacenamientoComprobantesService;
+import com.almoby.ruralcuruzu.service.ComprobanteService;
 import com.almoby.ruralcuruzu.service.EmailService;
 import com.almoby.ruralcuruzu.service.EstadoPagoMercadoPago;
 import com.almoby.ruralcuruzu.service.MercadoPagoService;
@@ -87,13 +88,16 @@ class CuotaServiceImplTest {
     private AlmacenamientoComprobantesService almacenamientoComprobantesService;
     @Mock
     private MercadoPagoService mercadoPagoService;
+    @Mock
+    private ComprobanteService comprobanteService;
 
     private CuotaServiceImpl service;
 
     @BeforeEach
     void setUp() {
         service = new CuotaServiceImpl(cuotaRepository, pagoRepository, ejecucionRepository, socioRepository,
-                emailService, reglaCuotaRepository, almacenamientoComprobantesService, mercadoPagoService);
+                emailService, reglaCuotaRepository, almacenamientoComprobantesService, mercadoPagoService,
+                comprobanteService);
 
         // Default: ningún pago vigente salvo que un test lo indique explícitamente
         // (evita repetir este stub en cada test que no necesita un Pago).
@@ -456,6 +460,10 @@ class CuotaServiceImplTest {
         assertThat(response.cuota().pagoVigente().comprobanteRuta()).isEqualTo("pago-1/archivo.pdf");
         assertThat(response.cuota().pagoVigente().informadoPorSocio()).isTrue();
         verify(pagoRepository, times(2)).save(any(Pago.class));
+        // Comprobante como su propia entidad (documento 10.4), además del dato en
+        // Pago.comprobanteRuta.
+        verify(comprobanteService).registrarSubidoPorSocio(
+                any(Pago.class), eq("pago-1/archivo.pdf"), any(MultipartFile.class));
     }
 
     @Test

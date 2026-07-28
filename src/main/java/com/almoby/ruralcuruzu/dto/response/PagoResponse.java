@@ -17,6 +17,8 @@ public record PagoResponse(
 
         String id,
         String cuotaId,
+        String socioNumeroSocio,
+        String socioNombre,
         String periodo,
         BigDecimal importe,
         MedioPago medioPago,
@@ -38,6 +40,8 @@ public record PagoResponse(
         return new PagoResponse(
                 pago.getId(),
                 pago.getCuotaId(),
+                pago.getSocioNumeroSocio(),
+                pago.getSocioNombre(),
                 pago.getPeriodo(),
                 pago.getImporte(),
                 pago.getMedioPago(),

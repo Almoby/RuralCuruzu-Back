@@ -53,6 +53,7 @@ import com.almoby.ruralcuruzu.repository.PagoRepository;
 import com.almoby.ruralcuruzu.repository.ReglaCuotaRepository;
 import com.almoby.ruralcuruzu.repository.SocioRepository;
 import com.almoby.ruralcuruzu.service.AlmacenamientoComprobantesService;
+import com.almoby.ruralcuruzu.service.ComprobanteService;
 import com.almoby.ruralcuruzu.service.CuotaService;
 import com.almoby.ruralcuruzu.service.EmailService;
 import com.almoby.ruralcuruzu.service.EstadoPagoMercadoPago;
@@ -109,6 +110,7 @@ public class CuotaServiceImpl implements CuotaService {
     private final ReglaCuotaRepository reglaCuotaRepository;
     private final AlmacenamientoComprobantesService almacenamientoComprobantesService;
     private final MercadoPagoService mercadoPagoService;
+    private final ComprobanteService comprobanteService;
 
     public CuotaServiceImpl(CuotaRepository cuotaRepository,
                              PagoRepository pagoRepository,
@@ -117,7 +119,8 @@ public class CuotaServiceImpl implements CuotaService {
                              EmailService emailService,
                              ReglaCuotaRepository reglaCuotaRepository,
                              AlmacenamientoComprobantesService almacenamientoComprobantesService,
-                             MercadoPagoService mercadoPagoService) {
+                             MercadoPagoService mercadoPagoService,
+                             ComprobanteService comprobanteService) {
         this.cuotaRepository = cuotaRepository;
         this.pagoRepository = pagoRepository;
         this.ejecucionRepository = ejecucionRepository;
@@ -126,6 +129,7 @@ public class CuotaServiceImpl implements CuotaService {
         this.reglaCuotaRepository = reglaCuotaRepository;
         this.almacenamientoComprobantesService = almacenamientoComprobantesService;
         this.mercadoPagoService = mercadoPagoService;
+        this.comprobanteService = comprobanteService;
     }
 
     /** Cron mensual: 1º de cada mes a las 6 AM (documento 10.2: "el sistema deberá generar automáticamente"). */
@@ -417,6 +421,10 @@ public class CuotaServiceImpl implements CuotaService {
         String comprobanteRuta = almacenamientoComprobantesService.guardar(pago.getId(), comprobante);
         pago.setComprobanteRuta(comprobanteRuta);
         pagoRepository.save(pago);
+
+        // Comprobante como su propia entidad (documento 10.4): además del dato en
+        // Pago.comprobanteRuta (compatibilidad), queda registrado acá con su metadata.
+        comprobanteService.registrarSubidoPorSocio(pago, comprobanteRuta, comprobante);
 
         cuota.setEstado(EstadoCuota.EN_REVISION);
         cuota.setMotivoRechazo(null);

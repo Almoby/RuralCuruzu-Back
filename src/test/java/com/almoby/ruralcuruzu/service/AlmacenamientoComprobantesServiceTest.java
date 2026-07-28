@@ -75,6 +75,26 @@ class AlmacenamientoComprobantesServiceTest {
     }
 
     @Test
+    void guardarBytes_contenidoGenerado_loGuardaBajoUnaSubcarpetaConElIdDelPago() {
+        byte[] contenido = "%PDF-contenido-generado".getBytes();
+
+        String ruta = service.guardarBytes("pago-7", "constancia-pago-pago-7.pdf", contenido);
+
+        assertThat(ruta).startsWith("pago-7/").endsWith("_constancia-pago-pago-7.pdf");
+        assertThat(Files.exists(directorioTemporal.resolve(ruta))).isTrue();
+    }
+
+    @Test
+    void guardarBytes_luegoResolverParaDescarga_devuelveElMismoContenido() throws IOException {
+        byte[] contenido = "%PDF-contenido-generado".getBytes();
+        String ruta = service.guardarBytes("pago-8", "constancia.pdf", contenido);
+
+        Path resuelto = service.resolverParaDescarga(ruta);
+
+        assertThat(Files.readAllBytes(resuelto)).isEqualTo(contenido);
+    }
+
+    @Test
     void resolverParaDescarga_archivoExistente_devuelveLaRutaAbsoluta() throws IOException {
         MultipartFile archivo = new MockMultipartFile("comprobante", "doc.pdf", "application/pdf", "x".getBytes());
         String rutaRelativa = service.guardar("pago-5", archivo);

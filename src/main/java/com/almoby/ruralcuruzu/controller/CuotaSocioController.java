@@ -20,6 +20,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import com.almoby.ruralcuruzu.constantes.RutasApi;
+import com.almoby.ruralcuruzu.domain.Comprobante;
 import com.almoby.ruralcuruzu.dto.request.InformarPagoCuotaRequest;
 import com.almoby.ruralcuruzu.dto.response.CuotaResumenResponse;
 import com.almoby.ruralcuruzu.dto.response.DatosBancariosResponse;
@@ -30,6 +31,7 @@ import com.almoby.ruralcuruzu.exception.ApiErrorResponse;
 import com.almoby.ruralcuruzu.exception.ArchivoInvalidoException;
 import com.almoby.ruralcuruzu.security.AuthenticatedUser;
 import com.almoby.ruralcuruzu.service.AlmacenamientoComprobantesService;
+import com.almoby.ruralcuruzu.service.ComprobanteService;
 import com.almoby.ruralcuruzu.service.CuotaService;
 import com.almoby.ruralcuruzu.service.DatosBancariosService;
 
@@ -60,13 +62,16 @@ public class CuotaSocioController {
     private final CuotaService cuotaService;
     private final AlmacenamientoComprobantesService almacenamientoComprobantesService;
     private final DatosBancariosService datosBancariosService;
+    private final ComprobanteService comprobanteService;
 
     public CuotaSocioController(CuotaService cuotaService,
                                  AlmacenamientoComprobantesService almacenamientoComprobantesService,
-                                 DatosBancariosService datosBancariosService) {
+                                 DatosBancariosService datosBancariosService,
+                                 ComprobanteService comprobanteService) {
         this.cuotaService = cuotaService;
         this.almacenamientoComprobantesService = almacenamientoComprobantesService;
         this.datosBancariosService = datosBancariosService;
+        this.comprobanteService = comprobanteService;
     }
 
     @Operation(summary = "Ver mis cuotas")
@@ -147,10 +152,15 @@ public class CuotaSocioController {
         return ResponseEntity.ok(cuotaService.listarPagosDeSocio(socioId));
     }
 
-    @Operation(summary = "Descargar el comprobante de un pago propio")
+    @Operation(summary = "Descargar el comprobante de un pago propio",
+            description = "El comprobante es su propia entidad (documento 10.4): o el archivo real que se adjuntó "
+                    + "al informar una transferencia, o -si el pago no tiene ninguno y ya está APROBADO (registrado "
+                    + "por un admin en ventanilla, o pagado por Mercado Pago)- una constancia en PDF que el sistema "
+                    + "genera la primera vez que hace falta y queda guardada para las próximas descargas.")
     @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "Comprobante encontrado"),
-            @ApiResponse(responseCode = "400", description = "Ese pago no tiene comprobante, o no es propio",
+            @ApiResponse(responseCode = "200", description = "Comprobante (real o generado) encontrado"),
+            @ApiResponse(responseCode = "400", description = "Ese pago no tiene comprobante ni admite generar uno "
+                    + "(todavía no está aprobado), o no es propio",
                     content = @Content(schema = @Schema(implementation = ApiErrorResponse.class)))
     })
     @GetMapping("/pagos/{pagoId}/comprobante")
@@ -163,22 +173,26 @@ public class CuotaSocioController {
         // No alcanza con que el socio esté logueado: además verificamos que el pago
         // pedido sea realmente suyo, para que nadie descargue el comprobante de otro
         // socio adivinando ids.
-        String rutaComprobante = cuotaService.listarPagosDeSocio(socioId).stream()
-                .filter(pago -> pago.id().equals(pagoId))
-                .map(PagoResponse::comprobanteRuta)
+        PagoResponse pago = cuotaService.listarPagosDeSocio(socioId).stream()
+                .filter(p -> p.id().equals(pagoId))
                 .findFirst()
                 .orElseThrow(() -> new ArchivoInvalidoException("Ese pago no tiene comprobante, o no es propio"));
 
-        if (rutaComprobante == null) {
-            throw new ArchivoInvalidoException("Ese pago no tiene comprobante adjunto");
-        }
+        Comprobante comprobante = comprobanteService.obtenerOGenerarParaPago(pago, socioId)
+                .orElseThrow(() -> new ArchivoInvalidoException("Ese pago no tiene comprobante adjunto"));
 
-        Path archivo = almacenamientoComprobantesService.resolverParaDescarga(rutaComprobante);
+        Path archivo = almacenamientoComprobantesService.resolverParaDescarga(comprobante.getRuta());
         Resource recurso = new FileSystemResource(archivo);
+        MediaType contentType = comprobante.getContentType() != null
+                ? MediaType.parseMediaType(comprobante.getContentType())
+                : tipoDeContenido(archivo);
+        String nombreDescarga = comprobante.getNombreArchivo() != null
+                ? comprobante.getNombreArchivo()
+                : nombreParaDescarga(archivo);
 
         return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + nombreParaDescarga(archivo) + "\"")
-                .contentType(tipoDeContenido(archivo))
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + nombreDescarga + "\"")
+                .contentType(contentType)
                 .body(recurso);
     }
 
