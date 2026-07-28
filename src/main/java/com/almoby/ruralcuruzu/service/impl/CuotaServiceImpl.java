@@ -5,6 +5,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.HashMap;
@@ -43,6 +44,7 @@ import com.almoby.ruralcuruzu.enums.EstadoPago;
 import com.almoby.ruralcuruzu.enums.EstadoSocio;
 import com.almoby.ruralcuruzu.enums.MedioPago;
 import com.almoby.ruralcuruzu.enums.OrigenEjecucionCuotas;
+import com.almoby.ruralcuruzu.enums.Rol;
 import com.almoby.ruralcuruzu.exception.ArchivoInvalidoException;
 import com.almoby.ruralcuruzu.exception.CuotaEstadoInvalidoException;
 import com.almoby.ruralcuruzu.exception.CuotaNoEncontradaException;
@@ -52,6 +54,7 @@ import com.almoby.ruralcuruzu.repository.EjecucionGeneracionCuotasRepository;
 import com.almoby.ruralcuruzu.repository.PagoRepository;
 import com.almoby.ruralcuruzu.repository.ReglaCuotaRepository;
 import com.almoby.ruralcuruzu.repository.SocioRepository;
+import com.almoby.ruralcuruzu.repository.UsuarioRepository;
 import com.almoby.ruralcuruzu.service.AlmacenamientoComprobantesService;
 import com.almoby.ruralcuruzu.service.ComprobanteService;
 import com.almoby.ruralcuruzu.service.CuotaService;
@@ -111,6 +114,7 @@ public class CuotaServiceImpl implements CuotaService {
     private final AlmacenamientoComprobantesService almacenamientoComprobantesService;
     private final MercadoPagoService mercadoPagoService;
     private final ComprobanteService comprobanteService;
+    private final UsuarioRepository usuarioRepository;
 
     public CuotaServiceImpl(CuotaRepository cuotaRepository,
                              PagoRepository pagoRepository,
@@ -120,7 +124,8 @@ public class CuotaServiceImpl implements CuotaService {
                              ReglaCuotaRepository reglaCuotaRepository,
                              AlmacenamientoComprobantesService almacenamientoComprobantesService,
                              MercadoPagoService mercadoPagoService,
-                             ComprobanteService comprobanteService) {
+                             ComprobanteService comprobanteService,
+                             UsuarioRepository usuarioRepository) {
         this.cuotaRepository = cuotaRepository;
         this.pagoRepository = pagoRepository;
         this.ejecucionRepository = ejecucionRepository;
@@ -130,6 +135,7 @@ public class CuotaServiceImpl implements CuotaService {
         this.almacenamientoComprobantesService = almacenamientoComprobantesService;
         this.mercadoPagoService = mercadoPagoService;
         this.comprobanteService = comprobanteService;
+        this.usuarioRepository = usuarioRepository;
     }
 
     /** Cron mensual: 1º de cada mes a las 6 AM (documento 10.2: "el sistema deberá generar automáticamente"). */
@@ -153,6 +159,47 @@ public class CuotaServiceImpl implements CuotaService {
 
         if (!pendientesVencidas.isEmpty()) {
             log.info("Marcadas {} cuota(s) como VENCIDA", pendientesVencidas.size());
+        }
+    }
+
+    /**
+     * Job diario: recordatorios de vencimiento y avisos de deuda (documento
+     * 29.2). Corre después de marcarCuotasVencidas para que una cuota que
+     * recién quedó VENCIDA hoy ya se vea como tal acá. La cadencia del
+     * recordatorio periódico de deuda ("mientras exista deuda") es una
+     * decisión propia: cada 7 días desde el vencimiento, ya que el documento
+     * la deja como "sugerida" sin un número fijo.
+     */
+    @Scheduled(cron = "0 0 7 * * *")
+    void enviarRecordatoriosDeCuotas() {
+        LocalDate hoy = LocalDate.now();
+        enviarRecordatorioPorDiasRestantes(hoy.plusDays(5), 5);
+        enviarRecordatorioPorDiasRestantes(hoy.plusDays(1), 1);
+        enviarRecordatorioPorDiasRestantes(hoy, 0);
+        enviarAvisosDeDeuda(hoy);
+    }
+
+    private void enviarRecordatorioPorDiasRestantes(LocalDate fechaVencimiento, int diasRestantes) {
+        for (Cuota cuota : cuotaRepository.findByEstadoAndFechaVencimiento(EstadoCuota.PENDIENTE, fechaVencimiento)) {
+            Socio socio = socioRepository.findById(cuota.getSocioId()).orElse(null);
+            if (socio != null && socio.obtenerEmail() != null) {
+                emailService.enviarCorreoCuotaProximaAVencer(socio.obtenerEmail(), socio.nombreParaMostrar(),
+                        cuota.getPeriodo(), cuota.getImporte(), cuota.getFechaVencimiento(), diasRestantes);
+            }
+        }
+    }
+
+    /** Avisa el primer día que una cuota queda VENCIDA, y después cada 7 días mientras lo siga estando. */
+    private void enviarAvisosDeDeuda(LocalDate hoy) {
+        for (Cuota cuota : cuotaRepository.findByEstado(EstadoCuota.VENCIDA)) {
+            long diasVencida = ChronoUnit.DAYS.between(cuota.getFechaVencimiento(), hoy);
+            if (diasVencida == 1 || (diasVencida > 0 && diasVencida % 7 == 0)) {
+                Socio socio = socioRepository.findById(cuota.getSocioId()).orElse(null);
+                if (socio != null && socio.obtenerEmail() != null) {
+                    emailService.enviarCorreoCuotaVencida(socio.obtenerEmail(), socio.nombreParaMostrar(),
+                            cuota.getPeriodo(), cuota.getImporte(), cuota.getFechaVencimiento());
+                }
+            }
         }
     }
 
@@ -433,6 +480,9 @@ public class CuotaServiceImpl implements CuotaService {
 
         log.info("Socio id={} informó un pago para cuota id={}", socioId, cuotaId);
 
+        usuarioRepository.findByRol(Rol.ADMIN).forEach(admin -> emailService.enviarCorreoPagoInformado(
+                admin.getEmail(), cuota.getSocioNumeroSocio(), cuota.getSocioNombre(), cuota.getPeriodo(), pago.getImporte()));
+
         return InformarPagoResponse.of(CuotaResponse.from(cuota, pago));
     }
 
@@ -674,9 +724,22 @@ public class CuotaServiceImpl implements CuotaService {
 
     private void notificarPagoRegistrado(Cuota cuota, Pago pago) {
         Socio socio = socioRepository.findById(cuota.getSocioId()).orElse(null);
-        if (socio != null && socio.obtenerEmail() != null) {
-            emailService.enviarCorreoPagoRegistrado(
-                    socio.obtenerEmail(), socio.nombreParaMostrar(), cuota.getPeriodo(), pago.getImporte());
+        if (socio == null || socio.obtenerEmail() == null) {
+            return;
+        }
+
+        emailService.enviarCorreoPagoRegistrado(
+                socio.obtenerEmail(), socio.nombreParaMostrar(), cuota.getPeriodo(), pago.getImporte());
+
+        // Documento 29.1 "cuenta al día": si esta era la última cuota pendiente/vencida/en
+        // revisión del socio, se lo avisa además del aviso puntual del pago. Se excluye la
+        // propia cuota por id (no por su estado ya guardado en Mongo): en revisarPagoInformado
+        // el cambio a PAGADA todavía no se persistió cuando se llega hasta acá.
+        boolean tieneOtraDeuda = cuotaRepository.findBySocioId(socio.getId()).stream()
+                .filter(c -> !c.getId().equals(cuota.getId()))
+                .anyMatch(c -> ESTADOS_QUE_SUMAN_DEUDA.contains(c.getEstado()));
+        if (!tieneOtraDeuda) {
+            emailService.enviarCorreoCuentaAlDia(socio.obtenerEmail(), socio.nombreParaMostrar());
         }
     }
 

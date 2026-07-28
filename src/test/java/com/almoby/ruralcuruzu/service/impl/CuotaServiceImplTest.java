@@ -33,6 +33,7 @@ import com.almoby.ruralcuruzu.domain.EjecucionGeneracionCuotas;
 import com.almoby.ruralcuruzu.domain.Pago;
 import com.almoby.ruralcuruzu.domain.ReglaCuota;
 import com.almoby.ruralcuruzu.domain.Socio;
+import com.almoby.ruralcuruzu.domain.Usuario;
 import com.almoby.ruralcuruzu.dto.request.AnularCuotaRequest;
 import com.almoby.ruralcuruzu.dto.request.InformarPagoCuotaRequest;
 import com.almoby.ruralcuruzu.dto.request.RegistrarPagoCuotaRequest;
@@ -52,6 +53,7 @@ import com.almoby.ruralcuruzu.enums.EstadoPago;
 import com.almoby.ruralcuruzu.enums.EstadoSocio;
 import com.almoby.ruralcuruzu.enums.MedioPago;
 import com.almoby.ruralcuruzu.enums.OrigenEjecucionCuotas;
+import com.almoby.ruralcuruzu.enums.Rol;
 import com.almoby.ruralcuruzu.enums.TipoPersona;
 import com.almoby.ruralcuruzu.exception.ArchivoInvalidoException;
 import com.almoby.ruralcuruzu.exception.CuotaEstadoInvalidoException;
@@ -62,6 +64,7 @@ import com.almoby.ruralcuruzu.repository.EjecucionGeneracionCuotasRepository;
 import com.almoby.ruralcuruzu.repository.PagoRepository;
 import com.almoby.ruralcuruzu.repository.ReglaCuotaRepository;
 import com.almoby.ruralcuruzu.repository.SocioRepository;
+import com.almoby.ruralcuruzu.repository.UsuarioRepository;
 import com.almoby.ruralcuruzu.service.AlmacenamientoComprobantesService;
 import com.almoby.ruralcuruzu.service.ComprobanteService;
 import com.almoby.ruralcuruzu.service.EmailService;
@@ -90,6 +93,8 @@ class CuotaServiceImplTest {
     private MercadoPagoService mercadoPagoService;
     @Mock
     private ComprobanteService comprobanteService;
+    @Mock
+    private UsuarioRepository usuarioRepository;
 
     private CuotaServiceImpl service;
 
@@ -97,7 +102,7 @@ class CuotaServiceImplTest {
     void setUp() {
         service = new CuotaServiceImpl(cuotaRepository, pagoRepository, ejecucionRepository, socioRepository,
                 emailService, reglaCuotaRepository, almacenamientoComprobantesService, mercadoPagoService,
-                comprobanteService);
+                comprobanteService, usuarioRepository);
 
         // Default: ningún pago vigente salvo que un test lo indique explícitamente
         // (evita repetir este stub en cada test que no necesita un Pago).
@@ -312,6 +317,8 @@ class CuotaServiceImplTest {
         Socio socio = socioActivo("socio-1", "SOC-000001", CategoriaSocio.ACTIVO);
         when(cuotaRepository.findBySocioIdAndPeriodo("socio-1", "2026-07")).thenReturn(Optional.of(cuota));
         when(socioRepository.findById("socio-1")).thenReturn(Optional.of(socio));
+        // Sin ninguna otra cuota en deuda para este socio (documento 29.1 "cuenta al día").
+        when(cuotaRepository.findBySocioId("socio-1")).thenReturn(List.of(cuota));
 
         RegistrarPagoCuotaRequest request = new RegistrarPagoCuotaRequest(
                 "socio-1", List.of("2026-07"), LocalDate.of(2026, 7, 5),
@@ -331,6 +338,26 @@ class CuotaServiceImplTest {
         assertThat(pagoCaptor.getValue().isInformadoPorSocio()).isFalse();
         verify(cuotaRepository).save(cuota);
         verify(emailService).enviarCorreoPagoRegistrado(eq("juan@example.com"), anyString(), eq("2026-07"), any());
+        verify(emailService).enviarCorreoCuentaAlDia(eq("juan@example.com"), anyString());
+    }
+
+    @Test
+    void registrarPago_conOtraCuotaPendienteDelSocio_noMandaCorreoDeCuentaAlDia() {
+        Cuota cuota = cuotaPendiente("cuota-1", "socio-1");
+        Cuota otraPendiente = cuotaPendiente("cuota-2", "socio-1", "2026-08");
+        Socio socio = socioActivo("socio-1", "SOC-000001", CategoriaSocio.ACTIVO);
+        when(cuotaRepository.findBySocioIdAndPeriodo("socio-1", "2026-07")).thenReturn(Optional.of(cuota));
+        when(socioRepository.findById("socio-1")).thenReturn(Optional.of(socio));
+        when(cuotaRepository.findBySocioId("socio-1")).thenReturn(List.of(cuota, otraPendiente));
+
+        RegistrarPagoCuotaRequest request = new RegistrarPagoCuotaRequest(
+                "socio-1", List.of("2026-07"), LocalDate.of(2026, 7, 5),
+                MedioPago.TRANSFERENCIA, "COMP-1", "ok");
+
+        service.registrarPago(request, "admin-1", "Admin Uno");
+
+        verify(emailService).enviarCorreoPagoRegistrado(eq("juan@example.com"), anyString(), eq("2026-07"), any());
+        verify(emailService, never()).enviarCorreoCuentaAlDia(anyString(), anyString());
     }
 
     @Test
@@ -464,6 +491,34 @@ class CuotaServiceImplTest {
         // Pago.comprobanteRuta.
         verify(comprobanteService).registrarSubidoPorSocio(
                 any(Pago.class), eq("pago-1/archivo.pdf"), any(MultipartFile.class));
+    }
+
+    @Test
+    void informarPago_conCuotaPropiaPendiente_avisaATodosLosAdmins() {
+        Cuota cuota = cuotaPendiente("cuota-1", "socio-1");
+        when(cuotaRepository.findById("cuota-1")).thenReturn(Optional.of(cuota));
+        when(pagoRepository.save(any(Pago.class))).thenAnswer(inv -> {
+            Pago pago = inv.getArgument(0);
+            if (pago.getId() == null) {
+                pago.setId("pago-1");
+            }
+            return pago;
+        });
+        when(almacenamientoComprobantesService.guardar(eq("pago-1"), any(MultipartFile.class)))
+                .thenReturn("pago-1/archivo.pdf");
+        Usuario admin1 = Usuario.builder().id("admin-1").email("admin1@example.com").rol(Rol.ADMIN).build();
+        Usuario admin2 = Usuario.builder().id("admin-2").email("admin2@example.com").rol(Rol.ADMIN).build();
+        when(usuarioRepository.findByRol(Rol.ADMIN)).thenReturn(List.of(admin1, admin2));
+
+        InformarPagoCuotaRequest request = new InformarPagoCuotaRequest(
+                LocalDate.of(2026, 7, 5), new BigDecimal("15000.00"), MedioPago.TRANSFERENCIA, null);
+
+        service.informarPago("cuota-1", request, comprobantePdf(), "socio-1");
+
+        verify(emailService).enviarCorreoPagoInformado(
+                eq("admin1@example.com"), eq("SOC-000001"), eq("Lopez, Juan"), eq("2026-07"), any());
+        verify(emailService).enviarCorreoPagoInformado(
+                eq("admin2@example.com"), eq("SOC-000001"), eq("Lopez, Juan"), eq("2026-07"), any());
     }
 
     @Test
@@ -806,6 +861,64 @@ class CuotaServiceImplTest {
 
         assertThat(vencida.getEstado()).isEqualTo(EstadoCuota.VENCIDA);
         verify(cuotaRepository).save(vencida);
+    }
+
+    // ---------- enviarRecordatoriosDeCuotas ----------
+
+    @Test
+    void enviarRecordatoriosDeCuotas_avisaACincoYUnDiaYElDiaDeVencimiento() {
+        Socio socio = socioActivo("socio-1", "SOC-000001", CategoriaSocio.ACTIVO);
+        when(socioRepository.findById("socio-1")).thenReturn(Optional.of(socio));
+
+        Cuota aCincoDias = cuotaPendiente("cuota-5", "socio-1");
+        Cuota aUnDia = cuotaPendiente("cuota-1", "socio-1");
+        Cuota hoy = cuotaPendiente("cuota-0", "socio-1");
+        LocalDate hoyFecha = LocalDate.now();
+        when(cuotaRepository.findByEstadoAndFechaVencimiento(EstadoCuota.PENDIENTE, hoyFecha.plusDays(5)))
+                .thenReturn(List.of(aCincoDias));
+        when(cuotaRepository.findByEstadoAndFechaVencimiento(EstadoCuota.PENDIENTE, hoyFecha.plusDays(1)))
+                .thenReturn(List.of(aUnDia));
+        when(cuotaRepository.findByEstadoAndFechaVencimiento(EstadoCuota.PENDIENTE, hoyFecha))
+                .thenReturn(List.of(hoy));
+        when(cuotaRepository.findByEstado(EstadoCuota.VENCIDA)).thenReturn(List.of());
+
+        service.enviarRecordatoriosDeCuotas();
+
+        verify(emailService).enviarCorreoCuotaProximaAVencer(
+                eq("juan@example.com"), anyString(), anyString(), any(), any(), eq(5));
+        verify(emailService).enviarCorreoCuotaProximaAVencer(
+                eq("juan@example.com"), anyString(), anyString(), any(), any(), eq(1));
+        verify(emailService).enviarCorreoCuotaProximaAVencer(
+                eq("juan@example.com"), anyString(), anyString(), any(), any(), eq(0));
+    }
+
+    @Test
+    void enviarRecordatoriosDeCuotas_avisaDeDeudaElPrimerDiaVencidaYCadaSieteDiasDespues() {
+        Socio socio = socioActivo("socio-1", "SOC-000001", CategoriaSocio.ACTIVO);
+        when(socioRepository.findById("socio-1")).thenReturn(Optional.of(socio));
+        when(cuotaRepository.findByEstadoAndFechaVencimiento(eq(EstadoCuota.PENDIENTE), any(LocalDate.class)))
+                .thenReturn(List.of());
+
+        Cuota vencidaAyer = cuotaPendiente("cuota-1", "socio-1");
+        vencidaAyer.setEstado(EstadoCuota.VENCIDA);
+        vencidaAyer.setFechaVencimiento(LocalDate.now().minusDays(1));
+
+        Cuota vencidaHaceSieteDias = cuotaPendiente("cuota-2", "socio-1");
+        vencidaHaceSieteDias.setEstado(EstadoCuota.VENCIDA);
+        vencidaHaceSieteDias.setFechaVencimiento(LocalDate.now().minusDays(7));
+
+        Cuota vencidaHaceTresDias = cuotaPendiente("cuota-3", "socio-1");
+        vencidaHaceTresDias.setEstado(EstadoCuota.VENCIDA);
+        vencidaHaceTresDias.setFechaVencimiento(LocalDate.now().minusDays(3));
+
+        when(cuotaRepository.findByEstado(EstadoCuota.VENCIDA))
+                .thenReturn(List.of(vencidaAyer, vencidaHaceSieteDias, vencidaHaceTresDias));
+
+        service.enviarRecordatoriosDeCuotas();
+
+        // Día 1 y día 7 sí avisan; día 3 (ni el primer día ni múltiplo de 7) no.
+        verify(emailService, times(2)).enviarCorreoCuotaVencida(
+                eq("juan@example.com"), anyString(), anyString(), any(), any());
     }
 
     // ---------- resumen ----------

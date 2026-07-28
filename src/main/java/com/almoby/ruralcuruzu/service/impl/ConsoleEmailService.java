@@ -7,12 +7,12 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
-import com.almoby.ruralcuruzu.service.EmailService;
+import com.almoby.ruralcuruzu.service.EmailSender;
 
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * Implementación de EmailService que, en vez de mandar un correo real,
+ * Implementación de EmailSender que, en vez de mandar un correo real,
  * imprime el contenido en la consola. Es la que se usa por defecto
  * (app.email.provider=console, o si no está configurada la variable EMAIL_PROVIDER)
  * para desarrollar y probar el flujo de "olvidé mi contraseña" sin depender
@@ -21,7 +21,7 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 @Service
 @ConditionalOnProperty(prefix = "app.email", name = "provider", havingValue = "console", matchIfMissing = true)
-public class ConsoleEmailService implements EmailService {
+public class ConsoleEmailService implements EmailSender {
 
     private final String urlBaseRestablecer;
 
@@ -191,5 +191,55 @@ public class ConsoleEmailService implements EmailService {
                 Si creés que fue un error, podés contactarnos.
                 ============================================================""",
                 destinatario, nombreComercial, motivo);
+    }
+
+    @Override
+    public void enviarCorreoCuotaProximaAVencer(String destinatario, String nombre, String periodo,
+                                                 BigDecimal importe, LocalDate fechaVencimiento, int diasRestantes) {
+        log.info("""
+                ==================== EMAIL (simulado) ====================
+                Para: {}
+                Asunto: Tu cuota vence en {} día(s) - Rural Curuzú
+                Hola {},
+                Tu cuota del período {} por ${} vence el {} (faltan {} día(s)).
+                ============================================================""",
+                destinatario, diasRestantes, nombre, periodo, importe, fechaVencimiento, diasRestantes);
+    }
+
+    @Override
+    public void enviarCorreoCuotaVencida(String destinatario, String nombre, String periodo,
+                                          BigDecimal importe, LocalDate fechaVencimiento) {
+        log.info("""
+                ==================== EMAIL (simulado) ====================
+                Para: {}
+                Asunto: Tenés una cuota vencida - Rural Curuzú
+                Hola {},
+                Tu cuota del período {} por ${} venció el {} y sigue impaga.
+                ============================================================""",
+                destinatario, nombre, periodo, importe, fechaVencimiento);
+    }
+
+    @Override
+    public void enviarCorreoPagoInformado(String destinatarioAdmin, String numeroSocio, String nombreSocio,
+                                           String periodo, BigDecimal importe) {
+        log.info("""
+                ==================== EMAIL (simulado) ====================
+                Para: {}
+                Asunto: Nuevo pago informado para revisar - Rural Curuzú
+                {} (socio {}) informó el pago de la cuota del período {} por ${}.
+                ============================================================""",
+                destinatarioAdmin, nombreSocio, numeroSocio, periodo, importe);
+    }
+
+    @Override
+    public void enviarCorreoCuentaAlDia(String destinatario, String nombre) {
+        log.info("""
+                ==================== EMAIL (simulado) ====================
+                Para: {}
+                Asunto: Tu cuenta está al día - Rural Curuzú
+                Hola {},
+                Tu cuenta está al día, no tenés ninguna cuota pendiente.
+                ============================================================""",
+                destinatario, nombre);
     }
 }

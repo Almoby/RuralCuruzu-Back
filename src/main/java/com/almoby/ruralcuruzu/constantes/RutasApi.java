@@ -40,6 +40,15 @@ public final class RutasApi {
     /** Ruta pública sin login: la llama Mercado Pago, no un usuario nuestro. */
     public static final String MERCADO_PAGO_WEBHOOK_BASE = "/api/pagos/mercado-pago/webhook";
     public static final String MERCADO_PAGO_WEBHOOK = MERCADO_PAGO_WEBHOOK_BASE + "/**";
+    /**
+     * La campanita (documento, seccion 29): a proposito no tiene un prefijo
+     * /admin, /socio o /comercio como el resto de los modulos, porque
+     * cualquier rol ve unicamente sus propias notificaciones (ver
+     * SecurityConfig: queda cubierta por el ".anyRequest().authenticated()"
+     * final, no hace falta un matcher de rol especifico).
+     */
+    public static final String NOTIFICACIONES_BASE = "/api/notificaciones";
+    public static final String NOTIFICACIONES = NOTIFICACIONES_BASE + "/**";
 
     public static final String SWAGGER_UI_HTML = "/swagger-ui.html";
     public static final String SWAGGER_UI = "/swagger-ui/**";

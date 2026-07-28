@@ -212,6 +212,13 @@ public class GlobalExceptionHandler {
         return responder(HttpStatus.NOT_FOUND, ex.getMessage(), request);
     }
 
+    @ExceptionHandler(NotificacionNoEncontradaException.class)
+    public ResponseEntity<ApiErrorResponse> handleNotificacionNoEncontrada(NotificacionNoEncontradaException ex,
+                                                                             HttpServletRequest request) {
+        log.warn("Notificación no encontrada [{}]: {}", request.getRequestURI(), ex.getMessage());
+        return responder(HttpStatus.NOT_FOUND, ex.getMessage(), request);
+    }
+
     @ExceptionHandler(CuotaEstadoInvalidoException.class)
     public ResponseEntity<ApiErrorResponse> handleCuotaEstadoInvalido(CuotaEstadoInvalidoException ex,
                                                                         HttpServletRequest request) {

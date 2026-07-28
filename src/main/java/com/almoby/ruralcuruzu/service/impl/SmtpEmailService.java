@@ -10,22 +10,24 @@ import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
 
-import com.almoby.ruralcuruzu.service.EmailService;
+import com.almoby.ruralcuruzu.service.EmailSender;
 
 import jakarta.mail.MessagingException;
 import jakarta.mail.internet.MimeMessage;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * Implementación real de EmailService: manda el correo por SMTP (Gmail por
+ * Implementación real de EmailSender: manda el correo por SMTP (Gmail por
  * defecto, configurable vía spring.mail.*) usando JavaMailSender.
  * Se activa solo con app.email.provider=smtp (variable de entorno EMAIL_PROVIDER=smtp);
  * mientras esa propiedad no esté en "smtp", sigue activa ConsoleEmailService.
+ * Ver NotificacionEmailServiceImpl para el registro de envíos (documento 29.3):
+ * esta clase solo se ocupa de mandar el correo en sí.
  */
 @Slf4j
 @Service
 @ConditionalOnProperty(prefix = "app.email", name = "provider", havingValue = "smtp")
-public class SmtpEmailService implements EmailService {
+public class SmtpEmailService implements EmailSender {
 
     private final JavaMailSender mailSender;
     private final String remitente;
@@ -540,5 +542,164 @@ public class SmtpEmailService implements EmailService {
                 <p>Motivo: %s</p>
                 <p>Si creés que fue un error, podés contactarnos para que la revisemos de nuevo.</p>
                 """.formatted(nombre, numeroSolicitud, motivo);
+    }
+
+    @Override
+    public void enviarCorreoCuotaProximaAVencer(String destinatario, String nombre, String periodo,
+                                                 BigDecimal importe, LocalDate fechaVencimiento, int diasRestantes) {
+        try {
+            MimeMessage mensaje = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(mensaje, true, "UTF-8");
+
+            helper.setFrom(remitente);
+            helper.setTo(destinatario);
+            helper.setSubject(asuntoCuotaProximaAVencer(diasRestantes) + " - Rural Curuzú");
+            helper.setText(cuerpoTextoPlanoCuotaProximaAVencer(nombre, periodo, importe, fechaVencimiento, diasRestantes),
+                    cuerpoHtmlCuotaProximaAVencer(nombre, periodo, importe, fechaVencimiento, diasRestantes));
+
+            mailSender.send(mensaje);
+            log.info("Correo de cuota próxima a vencer enviado a email={} periodo={} diasRestantes={}",
+                    destinatario, periodo, diasRestantes);
+        } catch (MessagingException | MailException ex) {
+            log.error("Error enviando correo de cuota próxima a vencer a email={} periodo={}",
+                    destinatario, periodo, ex);
+        }
+    }
+
+    private String asuntoCuotaProximaAVencer(int diasRestantes) {
+        if (diasRestantes <= 0) {
+            return "Tu cuota vence hoy";
+        }
+        return "Tu cuota vence en " + diasRestantes + (diasRestantes == 1 ? " día" : " días");
+    }
+
+    private String cuerpoTextoPlanoCuotaProximaAVencer(String nombre, String periodo, BigDecimal importe,
+                                                        LocalDate vencimiento, int diasRestantes) {
+        return """
+                Hola %s,
+
+                Tu cuota del período %s por $%s %s (vencimiento: %s).
+                """.formatted(nombre, periodo, importe, fraseVencimiento(diasRestantes), vencimiento);
+    }
+
+    private String cuerpoHtmlCuotaProximaAVencer(String nombre, String periodo, BigDecimal importe,
+                                                  LocalDate vencimiento, int diasRestantes) {
+        return """
+                <p>Hola %s,</p>
+                <p>Tu cuota del período <strong>%s</strong> por <strong>$%s</strong> %s (vencimiento: <strong>%s</strong>).</p>
+                """.formatted(nombre, periodo, importe, fraseVencimiento(diasRestantes), vencimiento);
+    }
+
+    private String fraseVencimiento(int diasRestantes) {
+        if (diasRestantes <= 0) {
+            return "vence hoy";
+        }
+        return "vence en " + diasRestantes + (diasRestantes == 1 ? " día" : " días");
+    }
+
+    @Override
+    public void enviarCorreoCuotaVencida(String destinatario, String nombre, String periodo,
+                                          BigDecimal importe, LocalDate fechaVencimiento) {
+        try {
+            MimeMessage mensaje = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(mensaje, true, "UTF-8");
+
+            helper.setFrom(remitente);
+            helper.setTo(destinatario);
+            helper.setSubject("Tenés una cuota vencida - Rural Curuzú");
+            helper.setText(cuerpoTextoPlanoCuotaVencida(nombre, periodo, importe, fechaVencimiento),
+                    cuerpoHtmlCuotaVencida(nombre, periodo, importe, fechaVencimiento));
+
+            mailSender.send(mensaje);
+            log.info("Correo de cuota vencida enviado a email={} periodo={}", destinatario, periodo);
+        } catch (MessagingException | MailException ex) {
+            log.error("Error enviando correo de cuota vencida a email={} periodo={}", destinatario, periodo, ex);
+        }
+    }
+
+    private String cuerpoTextoPlanoCuotaVencida(String nombre, String periodo, BigDecimal importe, LocalDate vencimiento) {
+        return """
+                Hola %s,
+
+                Tu cuota del período %s por $%s venció el %s y todavía figura impaga.
+                Regularizala para evitar quedar en mora.
+                """.formatted(nombre, periodo, importe, vencimiento);
+    }
+
+    private String cuerpoHtmlCuotaVencida(String nombre, String periodo, BigDecimal importe, LocalDate vencimiento) {
+        return """
+                <p>Hola %s,</p>
+                <p>Tu cuota del período <strong>%s</strong> por <strong>$%s</strong> venció el <strong>%s</strong> y todavía figura impaga.</p>
+                <p>Regularizala para evitar quedar en mora.</p>
+                """.formatted(nombre, periodo, importe, vencimiento);
+    }
+
+    @Override
+    public void enviarCorreoPagoInformado(String destinatarioAdmin, String numeroSocio, String nombreSocio,
+                                           String periodo, BigDecimal importe) {
+        try {
+            MimeMessage mensaje = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(mensaje, true, "UTF-8");
+
+            helper.setFrom(remitente);
+            helper.setTo(destinatarioAdmin);
+            helper.setSubject("Nuevo pago informado para revisar - Rural Curuzú");
+            helper.setText(cuerpoTextoPlanoPagoInformado(numeroSocio, nombreSocio, periodo, importe),
+                    cuerpoHtmlPagoInformado(numeroSocio, nombreSocio, periodo, importe));
+
+            mailSender.send(mensaje);
+            log.info("Correo de pago informado enviado a admin email={} numeroSocio={} periodo={}",
+                    destinatarioAdmin, numeroSocio, periodo);
+        } catch (MessagingException | MailException ex) {
+            log.error("Error enviando correo de pago informado a admin email={} numeroSocio={} periodo={}",
+                    destinatarioAdmin, numeroSocio, periodo, ex);
+        }
+    }
+
+    private String cuerpoTextoPlanoPagoInformado(String numeroSocio, String nombreSocio, String periodo, BigDecimal importe) {
+        return """
+                %s (socio %s) informó el pago por transferencia de la cuota del período %s por $%s.
+                Entrá al panel de administración para revisarlo.
+                """.formatted(nombreSocio, numeroSocio, periodo, importe);
+    }
+
+    private String cuerpoHtmlPagoInformado(String numeroSocio, String nombreSocio, String periodo, BigDecimal importe) {
+        return """
+                <p><strong>%s</strong> (socio %s) informó el pago por transferencia de la cuota del período <strong>%s</strong> por <strong>$%s</strong>.</p>
+                <p>Entrá al panel de administración para revisarlo.</p>
+                """.formatted(nombreSocio, numeroSocio, periodo, importe);
+    }
+
+    @Override
+    public void enviarCorreoCuentaAlDia(String destinatario, String nombre) {
+        try {
+            MimeMessage mensaje = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(mensaje, true, "UTF-8");
+
+            helper.setFrom(remitente);
+            helper.setTo(destinatario);
+            helper.setSubject("Tu cuenta está al día - Rural Curuzú");
+            helper.setText(cuerpoTextoPlanoCuentaAlDia(nombre), cuerpoHtmlCuentaAlDia(nombre));
+
+            mailSender.send(mensaje);
+            log.info("Correo de cuenta al día enviado a email={}", destinatario);
+        } catch (MessagingException | MailException ex) {
+            log.error("Error enviando correo de cuenta al día a email={}", destinatario, ex);
+        }
+    }
+
+    private String cuerpoTextoPlanoCuentaAlDia(String nombre) {
+        return """
+                Hola %s,
+
+                ¡Buenas noticias! Tu cuenta en Rural Curuzú está al día, no tenés ninguna cuota pendiente.
+                """.formatted(nombre);
+    }
+
+    private String cuerpoHtmlCuentaAlDia(String nombre) {
+        return """
+                <p>Hola %s,</p>
+                <p>¡Buenas noticias! Tu cuenta en <strong>Rural Curuzú</strong> está al día, no tenés ninguna cuota pendiente.</p>
+                """.formatted(nombre);
     }
 }

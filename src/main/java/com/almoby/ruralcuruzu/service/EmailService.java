@@ -96,4 +96,34 @@ public interface EmailService {
      * también se elimina como parte de la baja).
      */
     void enviarCorreoComercioEliminado(String destinatario, String nombreComercial, String motivo);
+
+    /**
+     * Recuerda al socio que una cuota esta por vencer (documento, seccion 29.2:
+     * "cinco dias antes" y "un dia antes" de recordatorio, y "dia de
+     * vencimiento" de aviso reutilizan este mismo correo con distinto
+     * diasRestantes).
+     */
+    void enviarCorreoCuotaProximaAVencer(String destinatario, String nombre, String periodo,
+                                          BigDecimal importe, LocalDate fechaVencimiento, int diasRestantes);
+
+    /**
+     * Avisa que una cuota quedo vencida y sigue impaga (documento, seccion
+     * 29.2: "luego del vencimiento" y el "recordatorio periodico mientras
+     * exista deuda" reutilizan este mismo correo).
+     */
+    void enviarCorreoCuotaVencida(String destinatario, String nombre, String periodo,
+                                   BigDecimal importe, LocalDate fechaVencimiento);
+
+    /**
+     * Avisa a un admin que un socio informo el pago de una cuota (transferencia)
+     * y esta a la espera de revision (documento, seccion 29.1: "pago informado").
+     */
+    void enviarCorreoPagoInformado(String destinatarioAdmin, String numeroSocio, String nombreSocio,
+                                    String periodo, BigDecimal importe);
+
+    /**
+     * Felicita al socio cuando, tras un pago, ya no le queda ninguna cuota
+     * pendiente, vencida o en revision (documento, seccion 29.1: "cuenta al dia").
+     */
+    void enviarCorreoCuentaAlDia(String destinatario, String nombre);
 }

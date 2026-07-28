@@ -103,6 +103,10 @@ public class SecurityConfig {
                         .requestMatchers(RutasApi.SOCIO_BENEFICIOS).hasRole("SOCIO")
                         .requestMatchers(RutasApi.COMERCIO_BENEFICIOS).hasRole("COMERCIO")
                         .requestMatchers(RutasApi.ADMIN_DASHBOARD).hasRole("ADMIN")
+                        // RutasApi.NOTIFICACIONES (la campanita) a proposito no tiene un
+                        // matcher propio acá: cualquier rol autenticado ve unicamente sus
+                        // propias notificaciones, así que queda cubierta por el
+                        // ".anyRequest().authenticated()" de abajo.
                         .anyRequest().authenticated())
                 .exceptionHandling(handling -> handling
                         .authenticationEntryPoint(authenticationEntryPoint)

@@ -22,4 +22,7 @@ public interface CuotaRepository extends MongoRepository<Cuota, String> {
 
     /** Usado por el job diario que marca VENCIDA a lo que quedó PENDIENTE. */
     List<Cuota> findByEstadoAndFechaVencimientoBefore(EstadoCuota estado, LocalDate fecha);
+
+    /** Usado por el job diario de recordatorios (documento 29.2): 5/1/0 días antes del vencimiento. */
+    List<Cuota> findByEstadoAndFechaVencimiento(EstadoCuota estado, LocalDate fecha);
 }
