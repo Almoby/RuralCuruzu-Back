@@ -263,8 +263,11 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(QrNoValidoException.class)
     public ResponseEntity<ApiErrorResponse> handleQrNoValido(QrNoValidoException ex, HttpServletRequest request) {
-        log.warn("QR no válido [{}]: {}", request.getRequestURI(), ex.getMessage());
-        return responder(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
+        log.warn("QR no válido [{}]: {} (motivo={})", request.getRequestURI(), ex.getMessage(), ex.getMotivo());
+        ApiErrorResponse body = ApiErrorResponse.conCodigo(HttpStatus.BAD_REQUEST.value(),
+                HttpStatus.BAD_REQUEST.getReasonPhrase(), ex.getMessage(), request.getRequestURI(),
+                ex.getMotivo().name());
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
     }
 
     @ExceptionHandler(BeneficioYaCanjeadoException.class)

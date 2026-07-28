@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -146,6 +147,25 @@ class BeneficioServiceImplTest {
     }
 
     @Test
+    void crearBeneficio_conFechaInicioFutura_naceInactivoEnLaBase() {
+        when(comercioRepository.findById("comercio-1")).thenReturn(Optional.of(comercio()));
+        when(beneficioRepository.save(any(Beneficio.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        CrearBeneficioRequest request = new CrearBeneficioRequest(
+                "15% en medicamentos", "Descuento en venta libre", TipoBeneficio.DESCUENTO_PORCENTAJE, "15%",
+                LocalDate.now().plusDays(7), null);
+
+        BeneficioCreadoResponse response = service.crearBeneficio("comercio-1", request);
+
+        // El campo crudo (no solo el estadoEfectivo() de la API) queda INACTIVO desde ya.
+        assertThat(response.beneficio().estado()).isEqualTo(EstadoBeneficio.INACTIVO);
+        ArgumentCaptor<Beneficio> captor = ArgumentCaptor.forClass(Beneficio.class);
+        verify(beneficioRepository).save(captor.capture());
+        assertThat(captor.getValue().getEstado()).isEqualTo(EstadoBeneficio.INACTIVO);
+        assertThat(captor.getValue().isPausadoManualmente()).isFalse();
+    }
+
+    @Test
     void crearBeneficio_comercioInexistente_lanzaExcepcion() {
         when(comercioRepository.findById("no-existe")).thenReturn(Optional.empty());
 
@@ -157,6 +177,25 @@ class BeneficioServiceImplTest {
     }
 
     // ---------- listar / obtener / actualizar / cambiar estado (ownership) ----------
+
+    @Test
+    void listarBeneficiosDelComercio_calculaUsosEsteMesPorBeneficioEnUnaSolaConsulta() {
+        Beneficio conUsos = beneficioVigente("beneficio-1", "comercio-1");
+        Beneficio sinUsos = beneficioVigente("beneficio-2", "comercio-1");
+        when(beneficioRepository.findByComercioId("comercio-1")).thenReturn(List.of(conUsos, sinUsos));
+        when(historialBeneficioRepository.findByComercioIdAndFechaUsoAfter(eq("comercio-1"), any(Instant.class)))
+                .thenReturn(List.of(
+                        HistorialBeneficio.builder().beneficioId("beneficio-1").build(),
+                        HistorialBeneficio.builder().beneficioId("beneficio-1").build()));
+
+        List<BeneficioResponse> respuesta = service.listarBeneficiosDelComercio("comercio-1");
+
+        assertThat(respuesta).hasSize(2);
+        assertThat(respuesta.stream().filter(b -> b.id().equals("beneficio-1")).findFirst().orElseThrow().usosEsteMes())
+                .isEqualTo(2L);
+        assertThat(respuesta.stream().filter(b -> b.id().equals("beneficio-2")).findFirst().orElseThrow().usosEsteMes())
+                .isEqualTo(0L);
+    }
 
     @Test
     void obtenerBeneficioDelComercio_deOtroComercio_lanzaBeneficioNoEncontrado() {
@@ -183,6 +222,127 @@ class BeneficioServiceImplTest {
     }
 
     @Test
+    void actualizarBeneficio_vencidoYReactivadoConNuevaFecha_seReactivaSolo() {
+        Beneficio beneficio = beneficioVigente("beneficio-1", "comercio-1");
+        beneficio.setEstado(EstadoBeneficio.INACTIVO); // lo dejó así el job diario al vencer
+        beneficio.setFechaFinVigencia(LocalDate.now().minusDays(1));
+        when(beneficioRepository.findById("beneficio-1")).thenReturn(Optional.of(beneficio));
+        when(beneficioRepository.save(any(Beneficio.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        ActualizarBeneficioRequest request = new ActualizarBeneficioRequest(
+                "15% en medicamentos", "desc", TipoBeneficio.DESCUENTO_PORCENTAJE, "15%",
+                null, LocalDate.now().plusDays(30));
+
+        BeneficioResponse response = service.actualizarBeneficio("comercio-1", "beneficio-1", request);
+
+        assertThat(response.estado()).isEqualTo(EstadoBeneficio.ACTIVO);
+    }
+
+    @Test
+    void actualizarBeneficio_pausadoAMano_noSeReactivaSoloAunqueLaFechaSigaVigente() {
+        Beneficio beneficio = beneficioVigente("beneficio-1", "comercio-1");
+        beneficio.setEstado(EstadoBeneficio.INACTIVO); // el comercio lo pausó, no venció
+        beneficio.setFechaFinVigencia(LocalDate.now().plusDays(30));
+        when(beneficioRepository.findById("beneficio-1")).thenReturn(Optional.of(beneficio));
+        when(beneficioRepository.save(any(Beneficio.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        ActualizarBeneficioRequest request = new ActualizarBeneficioRequest(
+                "15% en medicamentos", "desc", TipoBeneficio.DESCUENTO_PORCENTAJE, "15%",
+                null, LocalDate.now().plusDays(60));
+
+        BeneficioResponse response = service.actualizarBeneficio("comercio-1", "beneficio-1", request);
+
+        assertThat(response.estado()).isEqualTo(EstadoBeneficio.INACTIVO);
+    }
+
+    @Test
+    void actualizarBeneficio_pausadoAMuchoDespuesDeVencer_tampocoSeReactivaSolo() {
+        // Caso límite: el comercio pausó a propósito un beneficio que YA estaba vencido
+        // (pausadoManualmente=true, no solo estado=INACTIVO). Sin la marca de pausa manual,
+        // esto se confundiría con "lo venció el job" y se reactivaría solo al extender la fecha.
+        Beneficio beneficio = beneficioVigente("beneficio-1", "comercio-1");
+        beneficio.setEstado(EstadoBeneficio.INACTIVO);
+        beneficio.setPausadoManualmente(true);
+        beneficio.setFechaFinVigencia(LocalDate.now().minusDays(1));
+        when(beneficioRepository.findById("beneficio-1")).thenReturn(Optional.of(beneficio));
+        when(beneficioRepository.save(any(Beneficio.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        ActualizarBeneficioRequest request = new ActualizarBeneficioRequest(
+                "15% en medicamentos", "desc", TipoBeneficio.DESCUENTO_PORCENTAJE, "15%",
+                null, LocalDate.now().plusDays(30));
+
+        BeneficioResponse response = service.actualizarBeneficio("comercio-1", "beneficio-1", request);
+
+        assertThat(response.estado()).isEqualTo(EstadoBeneficio.INACTIVO);
+    }
+
+    @Test
+    void actualizarBeneficio_noHabiaEmpezadoYLeAdelantanLaFecha_seActivaSolo() {
+        Beneficio beneficio = beneficioVigente("beneficio-1", "comercio-1");
+        beneficio.setEstado(EstadoBeneficio.INACTIVO); // todavía no había llegado fechaInicioVigencia
+        beneficio.setFechaInicioVigencia(LocalDate.now().plusDays(7));
+        when(beneficioRepository.findById("beneficio-1")).thenReturn(Optional.of(beneficio));
+        when(beneficioRepository.save(any(Beneficio.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        ActualizarBeneficioRequest request = new ActualizarBeneficioRequest(
+                "15% en medicamentos", "desc", TipoBeneficio.DESCUENTO_PORCENTAJE, "15%",
+                LocalDate.now(), null); // adelantan el inicio a hoy
+
+        BeneficioResponse response = service.actualizarBeneficio("comercio-1", "beneficio-1", request);
+
+        assertThat(response.estado()).isEqualTo(EstadoBeneficio.ACTIVO);
+    }
+
+    @Test
+    void actualizarBeneficio_activoYLeAtrasanLaFechaDeInicio_seDesactivaSolo() {
+        Beneficio beneficio = beneficioVigente("beneficio-1", "comercio-1"); // estado=ACTIVO, sin fechas
+        when(beneficioRepository.findById("beneficio-1")).thenReturn(Optional.of(beneficio));
+        when(beneficioRepository.save(any(Beneficio.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        ActualizarBeneficioRequest request = new ActualizarBeneficioRequest(
+                "15% en medicamentos", "desc", TipoBeneficio.DESCUENTO_PORCENTAJE, "15%",
+                LocalDate.now().plusDays(7), null); // atrasan el inicio a la semana que viene
+
+        BeneficioResponse response = service.actualizarBeneficio("comercio-1", "beneficio-1", request);
+
+        assertThat(response.estado()).isEqualTo(EstadoBeneficio.INACTIVO);
+        assertThat(beneficio.isPausadoManualmente()).isFalse(); // quedó inactivo por fecha, no por pausa manual
+    }
+
+    @Test
+    void actualizarBeneficio_pausadoAMano_noSeDesactivaSoloAunqueLeAtrasenElInicio() {
+        Beneficio beneficio = beneficioVigente("beneficio-1", "comercio-1");
+        beneficio.setEstado(EstadoBeneficio.INACTIVO);
+        beneficio.setPausadoManualmente(true); // el comercio lo pausó a mano, no por fecha
+        when(beneficioRepository.findById("beneficio-1")).thenReturn(Optional.of(beneficio));
+        when(beneficioRepository.save(any(Beneficio.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        ActualizarBeneficioRequest request = new ActualizarBeneficioRequest(
+                "15% en medicamentos", "desc", TipoBeneficio.DESCUENTO_PORCENTAJE, "15%",
+                null, null); // fechas que lo dejarían vigente hoy si no estuviera pausado
+
+        BeneficioResponse response = service.actualizarBeneficio("comercio-1", "beneficio-1", request);
+
+        assertThat(response.estado()).isEqualTo(EstadoBeneficio.INACTIVO);
+    }
+
+    @Test
+    void obtenerBeneficioDelComercio_conFechaInicioFutura_apareceInactivoHastaEseDia() {
+        Beneficio beneficio = beneficioVigente("beneficio-1", "comercio-1");
+        beneficio.setFechaInicioVigencia(LocalDate.now().plusDays(7)); // todavía no arrancó
+        when(beneficioRepository.findById("beneficio-1")).thenReturn(Optional.of(beneficio));
+
+        BeneficioResponse antesDeEmpezar = service.obtenerBeneficioDelComercio("comercio-1", "beneficio-1");
+        assertThat(antesDeEmpezar.estado()).isEqualTo(EstadoBeneficio.INACTIVO);
+
+        // Sin tocar nada más (ni el job, ni un PATCH /estado): el mismo día que arranca la
+        // vigencia, ya se ve ACTIVO, porque el cálculo es en vivo (Beneficio.estaVigenteHoy()).
+        beneficio.setFechaInicioVigencia(LocalDate.now());
+        BeneficioResponse elDiaQueArranca = service.obtenerBeneficioDelComercio("comercio-1", "beneficio-1");
+        assertThat(elDiaQueArranca.estado()).isEqualTo(EstadoBeneficio.ACTIVO);
+    }
+
+    @Test
     void cambiarEstadoBeneficio_propio_loActualiza() {
         Beneficio beneficio = beneficioVigente("beneficio-1", "comercio-1");
         when(beneficioRepository.findById("beneficio-1")).thenReturn(Optional.of(beneficio));
@@ -192,6 +352,20 @@ class BeneficioServiceImplTest {
                 "comercio-1", "beneficio-1", new CambiarEstadoBeneficioRequest(EstadoBeneficio.INACTIVO));
 
         assertThat(response.estado()).isEqualTo(EstadoBeneficio.INACTIVO);
+        assertThat(beneficio.isPausadoManualmente()).isTrue();
+    }
+
+    @Test
+    void cambiarEstadoBeneficio_reactivar_limpiaLaMarcaDePausaManual() {
+        Beneficio beneficio = beneficioVigente("beneficio-1", "comercio-1");
+        beneficio.setEstado(EstadoBeneficio.INACTIVO);
+        beneficio.setPausadoManualmente(true);
+        when(beneficioRepository.findById("beneficio-1")).thenReturn(Optional.of(beneficio));
+        when(beneficioRepository.save(any(Beneficio.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.cambiarEstadoBeneficio("comercio-1", "beneficio-1", new CambiarEstadoBeneficioRequest(EstadoBeneficio.ACTIVO));
+
+        assertThat(beneficio.isPausadoManualmente()).isFalse();
     }
 
     // ---------- validarYUsarBeneficio ----------
@@ -211,7 +385,11 @@ class BeneficioServiceImplTest {
 
         assertThat(response.mensaje()).isEqualTo("Beneficio aplicado con éxito");
         assertThat(response.socioNombre()).isEqualTo("Pérez, Juan");
+        assertThat(response.socioNumeroSocio()).isEqualTo("SOC-000001");
+        assertThat(response.socioCategoria()).isEqualTo(CategoriaSocio.ACTIVO);
         assertThat(response.beneficioTitulo()).isEqualTo("15% en medicamentos");
+        assertThat(response.beneficioTipo()).isEqualTo(TipoBeneficio.DESCUENTO_PORCENTAJE);
+        assertThat(response.beneficioValor()).isEqualTo("15%");
         assertThat(response.montoAhorro()).isEqualByComparingTo("450.00");
 
         ArgumentCaptor<HistorialBeneficio> captor = ArgumentCaptor.forClass(HistorialBeneficio.class);
@@ -226,7 +404,8 @@ class BeneficioServiceImplTest {
         Beneficio beneficio = beneficioVigente("beneficio-1", "comercio-1");
         when(qrTokenService.extraerSocioId("qr-abc-123")).thenReturn("socio-1");
         when(socioRepository.findById("socio-1")).thenReturn(Optional.of(socio()));
-        doThrow(new QrNoValidoException("Tenés cuotas vencidas. Regularizá tu situación para volver a usar el QR."))
+        doThrow(new QrNoValidoException(EstadoQr.INACTIVO_POR_DEUDA,
+                "Tenés cuotas vencidas. Regularizá tu situación para volver a usar el QR."))
                 .when(estadoQrService).validarQrActivo(any(Socio.class));
 
         ValidarBeneficioRequest request = new ValidarBeneficioRequest("qr-abc-123", "beneficio-1", new BigDecimal("450.00"));
@@ -409,5 +588,76 @@ class BeneficioServiceImplTest {
         assertThat(resultado).hasSize(1);
         assertThat(resultado.get(0).comercioNombre()).isEqualTo("Farmacia Del Sol");
         assertThat(resultado.get(0).montoAhorro()).isEqualByComparingTo("450.00");
+    }
+
+    // ---------- marcarBeneficiosVencidos ----------
+
+    @Test
+    void marcarBeneficiosVencidos_pasaAInactivoLoQueYaVencio() {
+        Beneficio vencido = beneficioVigente("beneficio-1", "comercio-1");
+        vencido.setFechaFinVigencia(LocalDate.now().minusDays(1));
+        when(beneficioRepository.findByEstadoAndFechaFinVigenciaBefore(eq(EstadoBeneficio.ACTIVO), any(LocalDate.class)))
+                .thenReturn(List.of(vencido));
+
+        service.marcarBeneficiosVencidos();
+
+        assertThat(vencido.getEstado()).isEqualTo(EstadoBeneficio.INACTIVO);
+        verify(beneficioRepository).save(vencido);
+    }
+
+    @Test
+    void marcarBeneficiosVencidos_sinNadaVencido_noGuardaNada() {
+        when(beneficioRepository.findByEstadoAndFechaFinVigenciaBefore(eq(EstadoBeneficio.ACTIVO), any(LocalDate.class)))
+                .thenReturn(List.of());
+
+        service.marcarBeneficiosVencidos();
+
+        verify(beneficioRepository, never()).save(any(Beneficio.class));
+    }
+
+    // ---------- activarBeneficiosQueEmpiezanHoy ----------
+
+    @Test
+    void activarBeneficiosQueEmpiezanHoy_activaLosQueYaEmpezaronSuVigencia() {
+        Beneficio empezoHoy = beneficioVigente("beneficio-1", "comercio-1");
+        empezoHoy.setEstado(EstadoBeneficio.INACTIVO);
+        empezoHoy.setFechaInicioVigencia(LocalDate.now());
+        when(beneficioRepository.findByEstadoAndPausadoManualmenteFalseAndFechaInicioVigenciaLessThanEqual(
+                eq(EstadoBeneficio.INACTIVO), any(LocalDate.class)))
+                .thenReturn(List.of(empezoHoy));
+
+        service.activarBeneficiosQueEmpiezanHoy();
+
+        assertThat(empezoHoy.getEstado()).isEqualTo(EstadoBeneficio.ACTIVO);
+        verify(beneficioRepository).save(empezoHoy);
+    }
+
+    @Test
+    void activarBeneficiosQueEmpiezanHoy_siYaVencioTambien_noLoActiva() {
+        // Caso límite: fechaInicioVigencia <= hoy pero fechaFinVigencia también ya pasó
+        // (toda la ventana de vigencia quedó en el pasado). No tiene sentido activarlo
+        // para que el otro job lo vuelva a apagar recién a la medianoche siguiente.
+        Beneficio ventanaVencida = beneficioVigente("beneficio-1", "comercio-1");
+        ventanaVencida.setEstado(EstadoBeneficio.INACTIVO);
+        ventanaVencida.setFechaInicioVigencia(LocalDate.now().minusDays(10));
+        ventanaVencida.setFechaFinVigencia(LocalDate.now().minusDays(1));
+        when(beneficioRepository.findByEstadoAndPausadoManualmenteFalseAndFechaInicioVigenciaLessThanEqual(
+                eq(EstadoBeneficio.INACTIVO), any(LocalDate.class)))
+                .thenReturn(List.of(ventanaVencida));
+
+        service.activarBeneficiosQueEmpiezanHoy();
+
+        verify(beneficioRepository, never()).save(any(Beneficio.class));
+    }
+
+    @Test
+    void activarBeneficiosQueEmpiezanHoy_sinNadaParaActivar_noGuardaNada() {
+        when(beneficioRepository.findByEstadoAndPausadoManualmenteFalseAndFechaInicioVigenciaLessThanEqual(
+                eq(EstadoBeneficio.INACTIVO), any(LocalDate.class)))
+                .thenReturn(List.of());
+
+        service.activarBeneficiosQueEmpiezanHoy();
+
+        verify(beneficioRepository, never()).save(any(Beneficio.class));
     }
 }

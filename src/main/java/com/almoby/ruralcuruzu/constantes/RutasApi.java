@@ -28,6 +28,8 @@ public final class RutasApi {
     public static final String ADMIN_SOCIOS = ADMIN_SOCIOS_BASE + "/**";
     public static final String COMERCIO_BENEFICIOS_BASE = "/api/comercio/beneficios";
     public static final String COMERCIO_BENEFICIOS = COMERCIO_BENEFICIOS_BASE + "/**";
+    public static final String COMERCIO_DASHBOARD_BASE = "/api/comercio/dashboard";
+    public static final String COMERCIO_DASHBOARD = COMERCIO_DASHBOARD_BASE + "/**";
     public static final String SOCIO_BENEFICIOS_BASE = "/api/socio/beneficios";
     public static final String SOCIO_BENEFICIOS = SOCIO_BENEFICIOS_BASE + "/**";
     public static final String ADMIN_DASHBOARD_BASE = "/api/admin/dashboard";

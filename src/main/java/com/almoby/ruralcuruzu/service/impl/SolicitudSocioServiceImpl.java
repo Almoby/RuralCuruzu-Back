@@ -340,13 +340,13 @@ public class SolicitudSocioServiceImpl implements SolicitudSocioService {
 
     private DatosPersonaFisica mapearFisica(SolicitudSocioRequest r) {
         return new DatosPersonaFisica(r.apellidoYNombre(), r.documento(), r.fechaNacimiento(), r.cuit(),
-                r.direccion(), r.portalPisoDepartamento(), r.telefono(), r.email(), r.nombreEstablecimiento(),
-                r.direccionEstablecimiento());
+                r.direccion(), r.portalPisoDepartamento(), r.telefono(), r.email().trim().toLowerCase(),
+                r.nombreEstablecimiento(), r.direccionEstablecimiento());
     }
 
     private DatosPersonaJuridica mapearJuridica(SolicitudSocioRequest r) {
         return new DatosPersonaJuridica(r.apellidoYNombre(), r.cuit(), r.direccion(), r.portalPisoDepartamento(),
-                r.telefono(), r.email(), r.nombreEstablecimiento(), r.nombreResponsable(), r.dniResponsable(),
-                r.direccionEstablecimiento());
+                r.telefono(), r.email().trim().toLowerCase(), r.nombreEstablecimiento(), r.nombreResponsable(),
+                r.dniResponsable(), r.direccionEstablecimiento());
     }
 }

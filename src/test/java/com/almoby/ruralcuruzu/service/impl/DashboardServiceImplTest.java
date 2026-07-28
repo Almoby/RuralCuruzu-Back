@@ -6,6 +6,7 @@ import static org.mockito.Mockito.when;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.List;
 
@@ -14,6 +15,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import com.almoby.ruralcuruzu.domain.Beneficio;
 import com.almoby.ruralcuruzu.domain.Cuota;
 import com.almoby.ruralcuruzu.domain.HistorialBeneficio;
 import com.almoby.ruralcuruzu.domain.Socio;
@@ -96,6 +98,64 @@ class DashboardServiceImplTest {
                 .estado(estado)
                 .fechaUso(fechaUso)
                 .build();
+    }
+
+    // ---------- promocionesActivas (bug real: un ACTIVO vencido no debe contar) ----------
+
+    @Test
+    void indicadores_promocionesActivas_soloCuentaLasQueEstanVigentesHoy() {
+        Beneficio vigente = Beneficio.builder().id("b1").estado(EstadoBeneficio.ACTIVO).build();
+        // Simula el caso real: quedó con estado ACTIVO en la base pero su vigencia ya venció.
+        // El job diario (BeneficioServiceImpl.marcarBeneficiosVencidos) lo pasaría a INACTIVO recién
+        // mañana; el indicador no puede depender de ese timing.
+        Beneficio vencidoPeroActivo = Beneficio.builder()
+                .id("b2").estado(EstadoBeneficio.ACTIVO).fechaFinVigencia(LocalDate.now().minusDays(1)).build();
+
+        when(socioRepository.findAll()).thenReturn(List.of());
+        when(cuotaRepository.findAll()).thenReturn(List.of());
+        when(comercioRepository.findByEstado(EstadoComercio.ACTIVO)).thenReturn(List.of());
+        when(beneficioRepository.findByEstado(EstadoBeneficio.ACTIVO)).thenReturn(List.of(vigente, vencidoPeroActivo));
+        when(historialBeneficioRepository.findAll()).thenReturn(List.of());
+
+        IndicadoresPrincipalesResponse resultado = service().obtenerIndicadoresPrincipales();
+
+        assertThat(resultado.promocionesActivas()).isEqualTo(1); // solo "vigente", no "vencidoPeroActivo"
+    }
+
+    // ---------- obtenerDashboardPrincipal (agrega las 5 secciones) ----------
+
+    @Test
+    void obtenerDashboardPrincipal_bundleaLasCincoSeccionesConLosFiltrosCorrectos() {
+        Socio activo = socio("s1", EstadoSocio.ACTIVO, CategoriaSocio.ACTIVO, TipoPersona.FISICA, Instant.now());
+        Socio adherente = socio("s2", EstadoSocio.ACTIVO, CategoriaSocio.ADHERENTE, TipoPersona.JURIDICA, Instant.now());
+        when(socioRepository.findAll()).thenReturn(List.of(activo, adherente));
+        when(cuotaRepository.findAll()).thenReturn(List.of(
+                cuota("s1", "2026-03", new BigDecimal("100"), EstadoCuota.PAGADA),
+                cuota("s2", "2026-03", new BigDecimal("50"), EstadoCuota.PENDIENTE)));
+        when(comercioRepository.findByEstado(EstadoComercio.ACTIVO)).thenReturn(List.of());
+        when(beneficioRepository.findByEstado(EstadoBeneficio.ACTIVO)).thenReturn(List.of());
+        when(historialBeneficioRepository.findAll()).thenReturn(List.of(
+                historial("comercio-1", "Farmacia Del Sol", "s1", "15% en medicamentos",
+                        EstadoUsoBeneficio.USADO, Instant.now())));
+
+        var respuesta = service().obtenerDashboardPrincipal(2026, CategoriaSocio.ACTIVO, TipoPersona.FISICA);
+
+        // Indicadores: sobre TODOS los socios, sin el filtro de categoría/tipoPersona (ese filtro es solo de 7.3).
+        assertThat(respuesta.indicadoresPrincipales().totalSocios()).isEqualTo(2);
+
+        // Cobranza mensual: 12 filas del año pedido (2026), con marzo reflejando la cuota PAGADA.
+        assertThat(respuesta.cobranzaMensual()).hasSize(12);
+        assertThat(respuesta.cobranzaMensual().stream().filter(c -> c.periodo().equals("2026-03")).findFirst()
+                .orElseThrow().cobrado()).isEqualByComparingTo("100");
+
+        // Estado de socios: acá sí se aplica el filtro (categoria=ACTIVO, tipoPersona=FISICA) => solo s1.
+        assertThat(respuesta.estadoSocios().alDia()).isEqualTo(1);
+
+        assertThat(respuesta.usoBeneficiosPorComercio()).hasSize(1);
+        assertThat(respuesta.usoBeneficiosPorComercio().get(0).comercioNombre()).isEqualTo("Farmacia Del Sol");
+
+        assertThat(respuesta.beneficiosMasUtilizados()).hasSize(1);
+        assertThat(respuesta.beneficiosMasUtilizados().get(0).beneficioTitulo()).isEqualTo("15% en medicamentos");
     }
 
     // ---------- obtenerIndicadoresPrincipales ----------

@@ -7,7 +7,13 @@ import com.almoby.ruralcuruzu.domain.Beneficio;
 import com.almoby.ruralcuruzu.enums.EstadoBeneficio;
 import com.almoby.ruralcuruzu.enums.TipoBeneficio;
 
-/** Detalle completo de un beneficio, para el comercio que lo administra. */
+/**
+ * Detalle completo de un beneficio, para el comercio que lo administra.
+ * {@code estado} es siempre el efectivo (ver {@link Beneficio#estadoEfectivo()}):
+ * ya da INACTIVO apenas se cumple fechaFinVigencia, sin esperar al job diario
+ * ni depender de un campo aparte — el front no necesita mirar nada más que
+ * este campo para saber si la promoción está activa.
+ */
 public record BeneficioResponse(
 
         String id,
@@ -20,13 +26,18 @@ public record BeneficioResponse(
         LocalDate fechaInicioVigencia,
         LocalDate fechaFinVigencia,
         EstadoBeneficio estado,
-        boolean vigenteHoy,
+        long usosEsteMes,
         Instant fechaCreacion,
         Instant fechaActualizacion
 
 ) {
 
+    /** Beneficio recién creado: todavía no tiene ningún uso registrado. */
     public static BeneficioResponse from(Beneficio beneficio) {
+        return from(beneficio, 0L);
+    }
+
+    public static BeneficioResponse from(Beneficio beneficio, long usosEsteMes) {
         return new BeneficioResponse(
                 beneficio.getId(),
                 beneficio.getComercioId(),
@@ -37,8 +48,8 @@ public record BeneficioResponse(
                 beneficio.getValor(),
                 beneficio.getFechaInicioVigencia(),
                 beneficio.getFechaFinVigencia(),
-                beneficio.getEstado(),
-                beneficio.estaVigenteHoy(),
+                beneficio.estadoEfectivo(),
+                usosEsteMes,
                 beneficio.getFechaCreacion(),
                 beneficio.getFechaActualizacion());
     }

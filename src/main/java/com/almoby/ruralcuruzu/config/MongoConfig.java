@@ -1,12 +1,20 @@
 package com.almoby.ruralcuruzu.config;
 
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.util.List;
+
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.mongodb.autoconfigure.MongoConnectionDetails;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.convert.converter.Converter;
+import org.springframework.data.convert.ReadingConverter;
+import org.springframework.data.convert.WritingConverter;
 import org.springframework.data.mongodb.MongoDatabaseFactory;
 import org.springframework.data.mongodb.core.SimpleMongoClientDatabaseFactory;
+import org.springframework.data.mongodb.core.convert.MongoCustomConversions;
 
 import com.mongodb.ConnectionString;
 import com.mongodb.client.MongoClient;
@@ -31,6 +39,40 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 @Configuration
 public class MongoConfig {
+
+    /**
+     * Sin esto, Spring Data guarda un LocalDate convirtiéndolo a un instante
+     * (BSON Date) con la zona horaria por defecto de la JVM que esté corriendo
+     * en ese momento — y lo vuelve a convertir a LocalDate, al leerlo, con la
+     * zona horaria de la JVM que lo lea. Si ambas JVMs no coinciden (ej. se
+     * escribió desde una máquina en horario de Argentina y se lee desde un
+     * servidor en UTC), la fecha puede correrse un día para adelante o para
+     * atrás sin ningún error visible: es la causa más probable de que un
+     * beneficio con fecha_fin_vigencia "hoy" aparezca como no vigente, o de
+     * que una cuota parezca vencida un día antes o después de lo real.
+     * Guardar el LocalDate como texto ISO ("2026-07-27") en vez de como
+     * instante elimina la zona horaria de la ecuación por completo.
+     */
+    @Bean
+    public MongoCustomConversions mongoCustomConversions() {
+        return new MongoCustomConversions(List.of(new LocalDateToStringConverter(), new StringToLocalDateConverter()));
+    }
+
+    @WritingConverter
+    static class LocalDateToStringConverter implements Converter<LocalDate, String> {
+        @Override
+        public String convert(LocalDate source) {
+            return source.format(DateTimeFormatter.ISO_LOCAL_DATE);
+        }
+    }
+
+    @ReadingConverter
+    static class StringToLocalDateConverter implements Converter<String, LocalDate> {
+        @Override
+        public LocalDate convert(String source) {
+            return LocalDate.parse(source, DateTimeFormatter.ISO_LOCAL_DATE);
+        }
+    }
 
     @Bean
     @ConditionalOnMissingBean(MongoConnectionDetails.class)

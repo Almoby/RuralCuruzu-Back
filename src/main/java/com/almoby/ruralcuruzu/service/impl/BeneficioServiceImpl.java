@@ -1,9 +1,13 @@
 package com.almoby.ruralcuruzu.service.impl;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.stream.Collectors;
 
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import com.almoby.ruralcuruzu.domain.Beneficio;
@@ -34,6 +38,7 @@ import com.almoby.ruralcuruzu.repository.SocioRepository;
 import com.almoby.ruralcuruzu.security.jwt.QrTokenService;
 import com.almoby.ruralcuruzu.service.BeneficioService;
 import com.almoby.ruralcuruzu.service.EstadoQrService;
+import com.almoby.ruralcuruzu.util.FechaUtil;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -77,6 +82,63 @@ public class BeneficioServiceImpl implements BeneficioService {
         this.qrTokenService = qrTokenService;
     }
 
+    /**
+     * Job diario, a la medianoche exacta (el instante en que, por definición,
+     * deja de estar vigente un beneficio cuya fechaFinVigencia fue ayer):
+     * corrige el dato crudo en la base para que quede en sync con
+     * {@link Beneficio#estadoEfectivo()}, que es lo que ya ven el front y
+     * cualquier consumidor de la API sin depender de este job (ese método
+     * recalcula la vigencia en el momento, siempre). Este job es "housekeeping"
+     * para que también quede correcto quien mire la colección directamente
+     * (ej. desde Atlas). Un beneficio sin fechaFinVigencia (vigente para
+     * siempre) nunca entra acá.
+     */
+    @Scheduled(cron = "0 0 0 * * *")
+    void marcarBeneficiosVencidos() {
+        List<Beneficio> vencidos =
+                beneficioRepository.findByEstadoAndFechaFinVigenciaBefore(EstadoBeneficio.ACTIVO, LocalDate.now());
+
+        for (Beneficio beneficio : vencidos) {
+            beneficio.setEstado(EstadoBeneficio.INACTIVO);
+            beneficio.setFechaActualizacion(Instant.now());
+            beneficioRepository.save(beneficio);
+        }
+
+        if (!vencidos.isEmpty()) {
+            log.info("Marcados {} beneficio(s) como INACTIVO por fin de vigencia", vencidos.size());
+        }
+    }
+
+    /**
+     * Job diario simétrico al de arriba, para la otra punta: un beneficio
+     * creado con fechaInicioVigencia futura nace INACTIVO en la base (ver
+     * crearBeneficio) y este job lo pasa a ACTIVO apenas llega ese día,
+     * también a la medianoche exacta. pausadoManualmente=false en la consulta
+     * asegura que nunca se reactive algo que el comercio pausó a propósito.
+     */
+    @Scheduled(cron = "0 0 0 * * *")
+    void activarBeneficiosQueEmpiezanHoy() {
+        List<Beneficio> paraActivar = beneficioRepository
+                .findByEstadoAndPausadoManualmenteFalseAndFechaInicioVigenciaLessThanEqual(
+                        EstadoBeneficio.INACTIVO, LocalDate.now())
+                .stream()
+                // Por si ya pasó también su fechaFinVigencia (ventana de vigencia entera en
+                // el pasado): no tiene sentido activarlo para que el otro job lo vuelva a
+                // apagar recién a la medianoche siguiente.
+                .filter(Beneficio::dentroDeVigenciaHoy)
+                .toList();
+
+        for (Beneficio beneficio : paraActivar) {
+            beneficio.setEstado(EstadoBeneficio.ACTIVO);
+            beneficio.setFechaActualizacion(Instant.now());
+            beneficioRepository.save(beneficio);
+        }
+
+        if (!paraActivar.isEmpty()) {
+            log.info("Marcados {} beneficio(s) como ACTIVO por inicio de vigencia", paraActivar.size());
+        }
+    }
+
     @Override
     public BeneficioCreadoResponse crearBeneficio(String comercioId, CrearBeneficioRequest request) {
         Comercio comercio = comercioRepository.findById(comercioId)
@@ -93,10 +155,13 @@ public class BeneficioServiceImpl implements BeneficioService {
                 .valor(request.valor())
                 .fechaInicioVigencia(request.fechaInicioVigencia())
                 .fechaFinVigencia(request.fechaFinVigencia())
-                .estado(EstadoBeneficio.ACTIVO)
+                .pausadoManualmente(false)
                 .fechaCreacion(ahora)
                 .fechaActualizacion(ahora)
                 .build();
+        // Si la fecha de inicio es futura, nace INACTIVO en la base (no solo en el
+        // estadoEfectivo() de la API): el job de arriba lo activa solo cuando llegue el día.
+        beneficio.setEstado(beneficio.dentroDeVigenciaHoy() ? EstadoBeneficio.ACTIVO : EstadoBeneficio.INACTIVO);
         beneficioRepository.save(beneficio);
 
         log.info("Comercio id={} creó el beneficio id={} ({})", comercioId, beneficio.getId(), request.titulo());
@@ -106,14 +171,22 @@ public class BeneficioServiceImpl implements BeneficioService {
 
     @Override
     public List<BeneficioResponse> listarBeneficiosDelComercio(String comercioId) {
-        return beneficioRepository.findByComercioId(comercioId).stream()
-                .map(BeneficioResponse::from)
+        List<Beneficio> beneficios = beneficioRepository.findByComercioId(comercioId);
+
+        // Una sola consulta para todos los usos del mes del comercio, en vez de una por beneficio.
+        Map<String, Long> usosEsteMesPorBeneficio = historialBeneficioRepository
+                .findByComercioIdAndFechaUsoAfter(comercioId, FechaUtil.inicioDeMesActual()).stream()
+                .collect(Collectors.groupingBy(HistorialBeneficio::getBeneficioId, Collectors.counting()));
+
+        return beneficios.stream()
+                .map(b -> BeneficioResponse.from(b, usosEsteMesPorBeneficio.getOrDefault(b.getId(), 0L)))
                 .toList();
     }
 
     @Override
     public BeneficioResponse obtenerBeneficioDelComercio(String comercioId, String beneficioId) {
-        return BeneficioResponse.from(buscarPropioOFallar(comercioId, beneficioId));
+        Beneficio beneficio = buscarPropioOFallar(comercioId, beneficioId);
+        return BeneficioResponse.from(beneficio, usosEsteMes(beneficioId));
     }
 
     @Override
@@ -127,12 +200,23 @@ public class BeneficioServiceImpl implements BeneficioService {
         beneficio.setValor(request.valor());
         beneficio.setFechaInicioVigencia(request.fechaInicioVigencia());
         beneficio.setFechaFinVigencia(request.fechaFinVigencia());
+
+        // El campo crudo se auto-sincroniza con las fechas nuevas, salvo que el comercio lo
+        // haya pausado a mano (pausadoManualmente): eso es una decisión explícita que una
+        // edición de fechas no debería pisar. Sin esta marca, esto cubre los dos sentidos:
+        // reactiva solo si quedó vigente (venció y le extendieron la fecha de fin, o antes
+        // no había llegado la fecha de inicio y ahora sí), y desactiva solo si quedó fuera de
+        // rango (ej. adelantaron la fecha de inicio a la semana que viene).
+        if (!beneficio.isPausadoManualmente()) {
+            beneficio.setEstado(beneficio.dentroDeVigenciaHoy() ? EstadoBeneficio.ACTIVO : EstadoBeneficio.INACTIVO);
+        }
+
         beneficio.setFechaActualizacion(Instant.now());
         beneficioRepository.save(beneficio);
 
         log.info("Comercio id={} actualizó el beneficio id={}", comercioId, beneficioId);
 
-        return BeneficioResponse.from(beneficio);
+        return BeneficioResponse.from(beneficio, usosEsteMes(beneficioId));
     }
 
     @Override
@@ -141,12 +225,19 @@ public class BeneficioServiceImpl implements BeneficioService {
         Beneficio beneficio = buscarPropioOFallar(comercioId, beneficioId);
 
         beneficio.setEstado(request.nuevoEstado());
+        // Este cambio SIEMPRE es a propósito (lo dispara el comercio, nunca el job diario):
+        // marca la pausa como manual si lo desactiva, y limpia la marca si lo reactiva.
+        beneficio.setPausadoManualmente(request.nuevoEstado() == EstadoBeneficio.INACTIVO);
         beneficio.setFechaActualizacion(Instant.now());
         beneficioRepository.save(beneficio);
 
         log.info("Comercio id={} cambió el beneficio id={} a estado={}", comercioId, beneficioId, request.nuevoEstado());
 
-        return BeneficioResponse.from(beneficio);
+        return BeneficioResponse.from(beneficio, usosEsteMes(beneficioId));
+    }
+
+    private long usosEsteMes(String beneficioId) {
+        return historialBeneficioRepository.countByBeneficioIdAndFechaUsoAfter(beneficioId, FechaUtil.inicioDeMesActual());
     }
 
     @Override
@@ -183,6 +274,7 @@ public class BeneficioServiceImpl implements BeneficioService {
                 .socioId(socio.getId())
                 .socioNumeroSocio(socio.getNumeroSocio())
                 .socioNombre(socio.nombreParaMostrar())
+                .socioCategoria(socio.getCategoria())
                 .montoAhorro(request.montoAhorro())
                 .estado(EstadoUsoBeneficio.USADO)
                 .fechaUso(Instant.now())

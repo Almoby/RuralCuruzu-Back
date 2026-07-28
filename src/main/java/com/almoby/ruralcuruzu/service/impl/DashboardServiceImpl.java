@@ -13,11 +13,13 @@ import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
 
+import com.almoby.ruralcuruzu.domain.Beneficio;
 import com.almoby.ruralcuruzu.domain.Cuota;
 import com.almoby.ruralcuruzu.domain.HistorialBeneficio;
 import com.almoby.ruralcuruzu.domain.Socio;
 import com.almoby.ruralcuruzu.dto.response.BeneficioMasUtilizadoResponse;
 import com.almoby.ruralcuruzu.dto.response.CobranzaMensualResponse;
+import com.almoby.ruralcuruzu.dto.response.DashboardPrincipalResponse;
 import com.almoby.ruralcuruzu.dto.response.EstadoSociosResponse;
 import com.almoby.ruralcuruzu.dto.response.IndicadoresPrincipalesResponse;
 import com.almoby.ruralcuruzu.dto.response.UsoBeneficioPorComercioResponse;
@@ -35,6 +37,7 @@ import com.almoby.ruralcuruzu.repository.CuotaRepository;
 import com.almoby.ruralcuruzu.repository.HistorialBeneficioRepository;
 import com.almoby.ruralcuruzu.repository.SocioRepository;
 import com.almoby.ruralcuruzu.service.DashboardService;
+import com.almoby.ruralcuruzu.util.FechaUtil;
 
 /**
  * Ver documento, sección 7. Todo de solo lectura, agregando sobre las
@@ -58,10 +61,6 @@ import com.almoby.ruralcuruzu.service.DashboardService;
 @Service
 public class DashboardServiceImpl implements DashboardService {
 
-    private static final String[] NOMBRES_MES = {
-            "Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"
-    };
-
     private final SocioRepository socioRepository;
     private final CuotaRepository cuotaRepository;
     private final ComercioRepository comercioRepository;
@@ -81,12 +80,22 @@ public class DashboardServiceImpl implements DashboardService {
     }
 
     @Override
+    public DashboardPrincipalResponse obtenerDashboardPrincipal(int anio, CategoriaSocio categoria, TipoPersona tipoPersona) {
+        return new DashboardPrincipalResponse(
+                obtenerIndicadoresPrincipales(),
+                obtenerCobranzaMensual(anio),
+                obtenerEstadoSocios(categoria, tipoPersona),
+                obtenerUsoBeneficiosPorComercio(),
+                obtenerBeneficiosMasUtilizados());
+    }
+
+    @Override
     public IndicadoresPrincipalesResponse obtenerIndicadoresPrincipales() {
         List<Socio> socios = socioRepository.findAll();
         List<Cuota> cuotas = cuotaRepository.findAll();
         Map<String, List<Cuota>> cuotasPorSocio = cuotas.stream().collect(Collectors.groupingBy(Cuota::getSocioId));
 
-        Instant inicioMesActual = inicioDeMesActual();
+        Instant inicioMesActual = FechaUtil.inicioDeMesActual();
 
         long totalSocios = socios.size();
         long sociosNuevosEsteMes = socios.stream()
@@ -109,7 +118,12 @@ public class DashboardServiceImpl implements DashboardService {
         double porcentajeAlDia = totalSocios == 0 ? 0.0 : (alDia * 100.0 / totalSocios);
 
         long comerciosActivos = comercioRepository.findByEstado(EstadoComercio.ACTIVO).size();
-        long promocionesActivas = beneficioRepository.findByEstado(EstadoBeneficio.ACTIVO).size();
+        // No alcanza con el estado crudo: aunque el job diario (BeneficioServiceImpl.marcarBeneficiosVencidos)
+        // ya lo pasa a INACTIVO al otro día, estaVigenteHoy() también chequea el rango de fechas para no
+        // depender de que ese job ya haya corrido hoy.
+        long promocionesActivas = beneficioRepository.findByEstado(EstadoBeneficio.ACTIVO).stream()
+                .filter(Beneficio::estaVigenteHoy)
+                .count();
 
         String periodoActual = YearMonth.now().toString();
         String periodoAnterior = YearMonth.now().minusMonths(1).toString();
@@ -171,7 +185,7 @@ public class DashboardServiceImpl implements DashboardService {
                     .map(Cuota::getImporte)
                     .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-            resultado.add(new CobranzaMensualResponse(periodo, NOMBRES_MES[mes - 1], cobrado, pendiente));
+            resultado.add(new CobranzaMensualResponse(periodo, FechaUtil.NOMBRES_MES[mes - 1], cobrado, pendiente));
         }
         return resultado;
     }
@@ -207,7 +221,7 @@ public class DashboardServiceImpl implements DashboardService {
 
     @Override
     public List<UsoBeneficioPorComercioResponse> obtenerUsoBeneficiosPorComercio() {
-        Instant inicioMesActual = inicioDeMesActual();
+        Instant inicioMesActual = FechaUtil.inicioDeMesActual();
         Map<String, List<HistorialBeneficio>> porComercio = historialBeneficioRepository.findAll().stream()
                 .filter(h -> h.getEstado() == EstadoUsoBeneficio.USADO)
                 .collect(Collectors.groupingBy(HistorialBeneficio::getComercioId));
@@ -252,7 +266,7 @@ public class DashboardServiceImpl implements DashboardService {
 
     @Override
     public List<BeneficioMasUtilizadoResponse> obtenerBeneficiosMasUtilizados() {
-        Instant inicioMesActual = inicioDeMesActual();
+        Instant inicioMesActual = FechaUtil.inicioDeMesActual();
         Map<String, List<HistorialBeneficio>> porBeneficio = historialBeneficioRepository.findAll().stream()
                 .filter(h -> h.getEstado() == EstadoUsoBeneficio.USADO
                         && h.getFechaUso() != null
@@ -297,10 +311,6 @@ public class DashboardServiceImpl implements DashboardService {
             return EstadoCuotaSocio.PENDIENTE;
         }
         return EstadoCuotaSocio.AL_DIA;
-    }
-
-    private Instant inicioDeMesActual() {
-        return YearMonth.now().atDay(1).atStartOfDay(ZoneId.systemDefault()).toInstant();
     }
 
     private enum EstadoCuotaSocio {

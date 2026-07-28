@@ -69,6 +69,17 @@ public class Beneficio {
     @Field("estado")
     private EstadoBeneficio estado;
 
+    /**
+     * true si el último INACTIVO lo puso el comercio a propósito (PATCH
+     * /estado), false si vino del job diario por vencimiento. Sin esto no
+     * había forma de distinguir "lo pausé yo" de "se venció solo" una vez que
+     * ambos casos dejan el mismo estado=INACTIVO — y sin esa distinción, editar
+     * las fechas de un beneficio pausado a mano lo reactivaría por error (ver
+     * BeneficioServiceImpl.actualizarBeneficio).
+     */
+    @Field("pausado_manualmente")
+    private boolean pausadoManualmente;
+
     @Field("fecha_creacion")
     private Instant fechaCreacion;
 
@@ -77,13 +88,37 @@ public class Beneficio {
 
     /** Vigente hoy: ACTIVO y dentro del rango de fechas (si tiene). */
     public boolean estaVigenteHoy() {
-        if (estado != EstadoBeneficio.ACTIVO) {
-            return false;
-        }
+        return estado == EstadoBeneficio.ACTIVO && dentroDeVigenciaHoy();
+    }
+
+    /**
+     * Chequeo puro de fechas (sin mirar el campo {@code estado}): true si hoy
+     * cae dentro de [fechaInicioVigencia, fechaFinVigencia], considerando null
+     * como "sin límite" en cada punta. Es la base para que el campo crudo
+     * {@code estado} se auto-sincronice con las fechas tanto al crear/editar el
+     * beneficio como en los jobs diarios (ver BeneficioServiceImpl), sin
+     * depender de si en ese momento estaba ACTIVO o INACTIVO.
+     */
+    public boolean dentroDeVigenciaHoy() {
         LocalDate hoy = LocalDate.now();
         if (fechaInicioVigencia != null && hoy.isBefore(fechaInicioVigencia)) {
             return false;
         }
         return fechaFinVigencia == null || !hoy.isAfter(fechaFinVigencia);
+    }
+
+    /**
+     * El estado que hay que MOSTRAR (front, reportes, etc.), a diferencia del
+     * campo {@code estado} de arriba, que es el que el comercio puede tocar a
+     * mano (pausar/reactivar) y que el job diario
+     * (BeneficioServiceImpl.marcarBeneficiosVencidos) corrige recién a la
+     * medianoche siguiente al vencimiento. Este método no depende de ese job:
+     * calcula la vigencia en el momento, así que ya da INACTIVO desde el
+     * instante exacto en que se cumple fechaFinVigencia, sin ventana de
+     * espera. Todo consumidor externo (DTOs de respuesta) debería usar este
+     * método, no el campo {@code estado} crudo.
+     */
+    public EstadoBeneficio estadoEfectivo() {
+        return estaVigenteHoy() ? EstadoBeneficio.ACTIVO : EstadoBeneficio.INACTIVO;
     }
 }

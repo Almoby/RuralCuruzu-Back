@@ -200,7 +200,8 @@ public class NotificacionEmailServiceImpl implements EmailService {
     private void registrar(String destinatario, String nombreDestinatario, TipoNotificacion tipo, String asunto,
                             String mensaje, ResultadoNotificacion resultado, String error) {
         try {
-            String destinatarioId = usuarioRepository.findByEmail(destinatario)
+            String emailNormalizado = destinatario == null ? null : destinatario.trim().toLowerCase();
+            String destinatarioId = usuarioRepository.findByEmail(emailNormalizado)
                     .map(usuario -> usuario.getId())
                     .orElse(null);
 

@@ -2,7 +2,6 @@ package com.almoby.ruralcuruzu.controller;
 
 import java.time.LocalDate;
 import java.time.Year;
-import java.util.List;
 
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -13,11 +12,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.almoby.ruralcuruzu.constantes.RutasApi;
-import com.almoby.ruralcuruzu.dto.response.BeneficioMasUtilizadoResponse;
-import com.almoby.ruralcuruzu.dto.response.CobranzaMensualResponse;
-import com.almoby.ruralcuruzu.dto.response.EstadoSociosResponse;
-import com.almoby.ruralcuruzu.dto.response.IndicadoresPrincipalesResponse;
-import com.almoby.ruralcuruzu.dto.response.UsoBeneficioPorComercioResponse;
+import com.almoby.ruralcuruzu.dto.response.DashboardPrincipalResponse;
 import com.almoby.ruralcuruzu.enums.CategoriaSocio;
 import com.almoby.ruralcuruzu.enums.TipoPersona;
 import com.almoby.ruralcuruzu.service.DashboardExportService;
@@ -50,70 +45,22 @@ public class DashboardAdminController {
         this.dashboardExportService = dashboardExportService;
     }
 
-    @Operation(summary = "Indicadores principales (sección 7.1)",
-            description = "Total de socios, socios por estado de cuota, comercios activos, facturación mensual, "
-                    + "deuda acumulada y beneficios utilizados, entre otros datos de apoyo para cada tarjeta.")
-    @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "Indicadores obtenidos correctamente")
-    })
-    @GetMapping("/indicadores")
-    public ResponseEntity<IndicadoresPrincipalesResponse> obtenerIndicadores() {
-        log.info("GET /api/admin/dashboard/indicadores");
-        return ResponseEntity.ok(dashboardService.obtenerIndicadoresPrincipales());
-    }
-
-    @Operation(summary = "Gráfico de cobranza mensual (sección 7.2)",
-            description = "Total cobrado y total pendiente por cada mes del año indicado (los 12 meses, con cero "
-                    + "donde no haya datos). Sin año indicado, usa el año actual.")
+    @Operation(summary = "Dashboard principal (secciones 7.1 a 7.5)",
+            description = "Las 5 secciones en una sola llamada: indicadores principales, cobranza mensual (12 "
+                    + "meses del año indicado, o el año actual si no se indica), estado de socios (con filtros "
+                    + "opcionales por categoría y tipo de persona), uso de beneficios por comercio, y ranking de "
+                    + "beneficios más utilizados del mes en curso.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Datos obtenidos correctamente")
     })
-    @GetMapping("/cobranza-mensual")
-    public ResponseEntity<List<CobranzaMensualResponse>> obtenerCobranzaMensual(
-            @RequestParam(required = false) Integer año) {
-        int añoConsultado = año != null ? año : Year.now().getValue();
-        log.info("GET /api/admin/dashboard/cobranza-mensual - año={}", añoConsultado);
-        return ResponseEntity.ok(dashboardService.obtenerCobranzaMensual(añoConsultado));
-    }
-
-    @Operation(summary = "Estado de socios (sección 7.3)",
-            description = "Cantidad de socios al día, pendientes, vencidos e inactivos. Filtros opcionales por "
-                    + "categoría (ACTIVO, ADHERENTE) y tipo de persona (FISICA, JURIDICA).")
-    @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "Datos obtenidos correctamente")
-    })
-    @GetMapping("/estado-socios")
-    public ResponseEntity<EstadoSociosResponse> obtenerEstadoSocios(
+    @GetMapping
+    public ResponseEntity<DashboardPrincipalResponse> obtenerDashboardPrincipal(
+            @RequestParam(required = false) Integer año,
             @RequestParam(required = false) CategoriaSocio categoria,
             @RequestParam(required = false) TipoPersona tipoPersona) {
-        log.info("GET /api/admin/dashboard/estado-socios - categoria={} tipoPersona={}", categoria, tipoPersona);
-        return ResponseEntity.ok(dashboardService.obtenerEstadoSocios(categoria, tipoPersona));
-    }
-
-    @Operation(summary = "Uso de beneficios por comercio (sección 7.4)",
-            description = "Por cada comercio con al menos un uso: cantidad de beneficios utilizados, cantidad de "
-                    + "socios únicos, la promoción más utilizada y el uso desglosado por período. Ordenado de "
-                    + "mayor a menor cantidad de usos.")
-    @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "Datos obtenidos correctamente")
-    })
-    @GetMapping("/uso-beneficios-por-comercio")
-    public ResponseEntity<List<UsoBeneficioPorComercioResponse>> obtenerUsoBeneficiosPorComercio() {
-        log.info("GET /api/admin/dashboard/uso-beneficios-por-comercio");
-        return ResponseEntity.ok(dashboardService.obtenerUsoBeneficiosPorComercio());
-    }
-
-    @Operation(summary = "Ranking de beneficios más utilizados",
-            description = "A diferencia de uso-beneficios-por-comercio (que agrupa por comercio), acá cada fila es "
-                    + "un beneficio individual con su cantidad de usos del mes en curso. Ordenado de mayor a menor, "
-                    + "sin límite (el front recorta el top que necesite, ej. el top 5).")
-    @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "Datos obtenidos correctamente")
-    })
-    @GetMapping("/beneficios-mas-utilizados")
-    public ResponseEntity<List<BeneficioMasUtilizadoResponse>> obtenerBeneficiosMasUtilizados() {
-        log.info("GET /api/admin/dashboard/beneficios-mas-utilizados");
-        return ResponseEntity.ok(dashboardService.obtenerBeneficiosMasUtilizados());
+        int añoConsultado = año != null ? año : Year.now().getValue();
+        log.info("GET /api/admin/dashboard - año={} categoria={} tipoPersona={}", añoConsultado, categoria, tipoPersona);
+        return ResponseEntity.ok(dashboardService.obtenerDashboardPrincipal(añoConsultado, categoria, tipoPersona));
     }
 
     @Operation(summary = "Exportar el reporte completo en PDF",

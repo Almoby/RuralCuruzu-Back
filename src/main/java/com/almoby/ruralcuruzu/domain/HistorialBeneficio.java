@@ -9,6 +9,7 @@ import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.mongodb.core.mapping.Field;
 
+import com.almoby.ruralcuruzu.enums.CategoriaSocio;
 import com.almoby.ruralcuruzu.enums.EstadoUsoBeneficio;
 import com.almoby.ruralcuruzu.enums.TipoBeneficio;
 
@@ -80,6 +81,10 @@ public class HistorialBeneficio {
 
     @Field("socio_nombre")
     private String socioNombre;
+
+    /** Denormalizado igual que el resto de los datos del socio: es el comprobante del momento del canje. */
+    @Field("socio_categoria")
+    private CategoriaSocio socioCategoria;
 
     @Field("monto_ahorro")
     private BigDecimal montoAhorro;

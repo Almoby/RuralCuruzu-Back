@@ -62,7 +62,7 @@ public class EstadoQrServiceImpl implements EstadoQrService {
     public void validarQrActivo(Socio socio) {
         EstadoQrResponse estadoActual = calcularEstado(socio);
         if (estadoActual.estado() != EstadoQr.ACTIVO) {
-            throw new QrNoValidoException(estadoActual.mensaje());
+            throw new QrNoValidoException(estadoActual.estado(), estadoActual.mensaje());
         }
     }
 
