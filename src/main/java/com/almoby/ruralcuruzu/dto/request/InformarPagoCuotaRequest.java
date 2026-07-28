@@ -8,7 +8,12 @@ import com.almoby.ruralcuruzu.enums.MedioPago;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 
-/** El socio informa (autoservicio) que pagó una cuota; queda a la espera de revisión. */
+/**
+ * El socio informa (autoservicio) que pagó una cuota; queda a la espera de
+ * revisión. Va como parte JSON (`datos`) de un multipart/form-data junto con
+ * el archivo del comprobante (parte `comprobante`), obligatorio: ver
+ * CuotaSocioController.informarPago.
+ */
 public record InformarPagoCuotaRequest(
 
         @NotNull(message = "La fecha de pago es obligatoria")
@@ -20,8 +25,6 @@ public record InformarPagoCuotaRequest(
 
         @NotNull(message = "El medio de pago es obligatorio")
         MedioPago medioPago,
-
-        String comprobante,
 
         String observacion
 

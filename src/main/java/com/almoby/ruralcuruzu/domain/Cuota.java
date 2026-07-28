@@ -32,6 +32,11 @@ import lombok.Setter;
  * la generación mensual cree dos cuotas para el mismo socio en el mismo mes
  * aunque el job se dispare dos veces (defensa en profundidad, además del
  * chequeo explícito que ya hace CuotaServiceImpl antes de generar).
+ *
+ * Los datos del pago en sí NO viven acá (RN-17: el pago es su propia
+ * entidad de base de datos): ver {@link Pago}, que referencia esta cuota por
+ * {@code cuotaId}. Una cuota puede tener más de un Pago a lo largo del
+ * tiempo (ej. una transferencia rechazada y un segundo intento aprobado).
  */
 @Document(collection = "cuotas")
 @CompoundIndex(name = "socio_periodo_unico", def = "{'socio_id': 1, 'periodo': 1}", unique = true)
@@ -73,9 +78,6 @@ public class Cuota {
 
     @Field("estado")
     private EstadoCuota estado;
-
-    @Field("datos_pago")
-    private DatosPago datosPago;
 
     @Field("motivo_rechazo")
     private String motivoRechazo;

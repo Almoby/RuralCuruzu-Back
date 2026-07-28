@@ -4,13 +4,14 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 
 import com.almoby.ruralcuruzu.domain.Cuota;
+import com.almoby.ruralcuruzu.domain.Pago;
 import com.almoby.ruralcuruzu.enums.EstadoCuota;
-import com.almoby.ruralcuruzu.enums.MedioPago;
 
 /**
  * Fila de listado, sin todos los detalles de CuotaResponse.
- * {@code medioPago} viene de {@code datosPago} y es null en cuotas que
- * todavía no tienen un pago registrado (PENDIENTE/VENCIDA sin informar).
+ * {@code pagoVigente} es, de todos los {@link Pago} de esta cuota, el más
+ * relevante para mostrar (el APROBADO si existe, si no el EN_REVISION, si no
+ * {@code null}) — ver el mismo criterio en CuotaResponse.
  */
 public record CuotaResumenResponse(
 
@@ -21,11 +22,11 @@ public record CuotaResumenResponse(
         BigDecimal importe,
         EstadoCuota estado,
         LocalDate fechaVencimiento,
-        MedioPago medioPago
+        PagoResponse pagoVigente
 
 ) {
 
-    public static CuotaResumenResponse from(Cuota cuota) {
+    public static CuotaResumenResponse from(Cuota cuota, Pago pagoVigente) {
         return new CuotaResumenResponse(
                 cuota.getId(),
                 cuota.getSocioNumeroSocio(),
@@ -34,6 +35,6 @@ public record CuotaResumenResponse(
                 cuota.getImporte(),
                 cuota.getEstado(),
                 cuota.getFechaVencimiento(),
-                cuota.getDatosPago() != null ? cuota.getDatosPago().getMedioPago() : null);
+                PagoResponse.from(pagoVigente));
     }
 }

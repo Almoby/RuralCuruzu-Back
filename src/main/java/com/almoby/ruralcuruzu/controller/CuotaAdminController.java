@@ -23,6 +23,7 @@ import com.almoby.ruralcuruzu.dto.response.EstadoCuentaSocioResponse;
 import com.almoby.ruralcuruzu.dto.response.GeneracionCuotasResponse;
 import com.almoby.ruralcuruzu.dto.response.RegistrarPagoResponse;
 import com.almoby.ruralcuruzu.dto.response.ResumenCuotasResponse;
+import com.almoby.ruralcuruzu.dto.response.RevisarPagoInformadoResponse;
 import com.almoby.ruralcuruzu.enums.EstadoCuota;
 import com.almoby.ruralcuruzu.exception.ApiErrorResponse;
 import com.almoby.ruralcuruzu.security.AuthenticatedUser;
@@ -174,7 +175,7 @@ public class CuotaAdminController {
                     content = @Content(schema = @Schema(implementation = ApiErrorResponse.class)))
     })
     @PatchMapping("/{id}/revision")
-    public ResponseEntity<CuotaResponse> revisarPagoInformado(
+    public ResponseEntity<RevisarPagoInformadoResponse> revisarPagoInformado(
             @PathVariable String id,
             @Valid @RequestBody RevisarPagoInformadoRequest request,
             @AuthenticationPrincipal AuthenticatedUser admin) {

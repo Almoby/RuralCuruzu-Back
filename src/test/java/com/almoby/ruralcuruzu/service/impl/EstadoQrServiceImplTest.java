@@ -17,16 +17,18 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.almoby.ruralcuruzu.domain.Cuota;
-import com.almoby.ruralcuruzu.domain.DatosPago;
+import com.almoby.ruralcuruzu.domain.Pago;
 import com.almoby.ruralcuruzu.domain.Socio;
 import com.almoby.ruralcuruzu.domain.Usuario;
 import com.almoby.ruralcuruzu.dto.response.EstadoQrResponse;
 import com.almoby.ruralcuruzu.enums.EstadoCuota;
+import com.almoby.ruralcuruzu.enums.EstadoPago;
 import com.almoby.ruralcuruzu.enums.EstadoQr;
 import com.almoby.ruralcuruzu.enums.EstadoSocio;
 import com.almoby.ruralcuruzu.enums.EstadoUsuario;
 import com.almoby.ruralcuruzu.exception.QrNoValidoException;
 import com.almoby.ruralcuruzu.repository.CuotaRepository;
+import com.almoby.ruralcuruzu.repository.PagoRepository;
 import com.almoby.ruralcuruzu.repository.UsuarioRepository;
 
 /**
@@ -39,13 +41,15 @@ class EstadoQrServiceImplTest {
     @Mock
     private CuotaRepository cuotaRepository;
     @Mock
+    private PagoRepository pagoRepository;
+    @Mock
     private UsuarioRepository usuarioRepository;
 
     private EstadoQrServiceImpl service;
 
     @BeforeEach
     void setUp() {
-        service = new EstadoQrServiceImpl(cuotaRepository, usuarioRepository);
+        service = new EstadoQrServiceImpl(cuotaRepository, pagoRepository, usuarioRepository);
     }
 
     private Socio socio(EstadoSocio estado, String usuarioId) {
@@ -56,9 +60,13 @@ class EstadoQrServiceImplTest {
         return Usuario.builder().id("usuario-1").estado(estado).build();
     }
 
-    private Cuota cuota(String periodo, EstadoCuota estado, LocalDate fechaVencimiento) {
-        return Cuota.builder().socioId("socio-1").periodo(periodo).estado(estado)
+    private Cuota cuota(String id, String periodo, EstadoCuota estado, LocalDate fechaVencimiento) {
+        return Cuota.builder().id(id).socioId("socio-1").periodo(periodo).estado(estado)
                 .fechaVencimiento(fechaVencimiento).build();
+    }
+
+    private Cuota cuota(String periodo, EstadoCuota estado, LocalDate fechaVencimiento) {
+        return cuota(null, periodo, estado, fechaVencimiento);
     }
 
     @Test
@@ -134,15 +142,16 @@ class EstadoQrServiceImplTest {
     @Test
     void calcularEstado_ultimoPagoEsElDeLaCuotaPagadaMasReciente() {
         when(usuarioRepository.findById("usuario-1")).thenReturn(Optional.of(usuario(EstadoUsuario.ACTIVO)));
-        Cuota abril = cuota("2026-04", EstadoCuota.PAGADA, LocalDate.of(2026, 4, 9));
-        abril.setDatosPago(DatosPago.builder().fechaPago(Instant.parse("2026-04-08T12:00:00Z"))
-                .importe(BigDecimal.TEN).build());
-        Cuota mayo = cuota("2026-05", EstadoCuota.PAGADA, LocalDate.of(2026, 5, 9));
-        mayo.setDatosPago(DatosPago.builder().fechaPago(Instant.parse("2026-05-08T12:00:00Z"))
-                .importe(BigDecimal.TEN).build());
-        Cuota junio = cuota("2026-06", EstadoCuota.PENDIENTE, LocalDate.of(2026, 6, 9)); // todavía sin pagar
+        Cuota abril = cuota("cuota-abril", "2026-04", EstadoCuota.PAGADA, LocalDate.of(2026, 4, 9));
+        Cuota mayo = cuota("cuota-mayo", "2026-05", EstadoCuota.PAGADA, LocalDate.of(2026, 5, 9));
+        Cuota junio = cuota("cuota-junio", "2026-06", EstadoCuota.PENDIENTE, LocalDate.of(2026, 6, 9)); // sin pagar
+
+        Pago pagoMayo = Pago.builder().cuotaId("cuota-mayo").estado(EstadoPago.APROBADO)
+                .fechaPago(Instant.parse("2026-05-08T12:00:00Z")).importe(BigDecimal.TEN).build();
 
         when(cuotaRepository.findBySocioId("socio-1")).thenReturn(List.of(abril, mayo, junio));
+        when(pagoRepository.findByCuotaIdAndEstado("cuota-mayo", EstadoPago.APROBADO))
+                .thenReturn(Optional.of(pagoMayo));
 
         EstadoQrResponse resultado = service.calcularEstado(socio(EstadoSocio.ACTIVO, "usuario-1"));
 

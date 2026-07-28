@@ -40,6 +40,10 @@ public class SecurityConfig {
             // todavía no tiene cuenta, así que se protege con el token (de un solo
             // uso y con vencimiento) en vez de con sesión.
             RutasApi.RESPUESTA_SOLICITUD,
+            // Webhook de Mercado Pago (documento 10.4): lo llama Mercado Pago, no un
+            // usuario nuestro, así que no puede requerir un Bearer token nuestro. El
+            // contenido nunca se usa a ciegas (ver PagoWebhookController).
+            RutasApi.MERCADO_PAGO_WEBHOOK,
             // Documentación Swagger/OpenAPI: pública para poder verla sin loguearse.
             RutasApi.SWAGGER_UI_HTML,
             RutasApi.SWAGGER_UI,
@@ -92,6 +96,7 @@ public class SecurityConfig {
                         .requestMatchers(RutasApi.ADMIN_COMERCIOS).hasRole("ADMIN")
                         .requestMatchers(RutasApi.ADMIN_CUOTAS).hasRole("ADMIN")
                         .requestMatchers(RutasApi.ADMIN_REGLAS_CUOTA).hasRole("ADMIN")
+                        .requestMatchers(RutasApi.ADMIN_DATOS_BANCARIOS).hasRole("ADMIN")
                         .requestMatchers(RutasApi.ADMIN_SOCIOS).hasRole("ADMIN")
                         .requestMatchers(RutasApi.SOCIO_CUOTAS).hasRole("SOCIO")
                         .requestMatchers(RutasApi.SOCIO_PERFIL).hasRole("SOCIO")

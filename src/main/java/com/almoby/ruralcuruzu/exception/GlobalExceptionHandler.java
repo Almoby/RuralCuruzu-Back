@@ -7,6 +7,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
@@ -190,6 +191,20 @@ public class GlobalExceptionHandler {
         return responder(HttpStatus.NOT_FOUND, ex.getMessage(), request);
     }
 
+    @ExceptionHandler(MercadoPagoIntegracionException.class)
+    public ResponseEntity<ApiErrorResponse> handleMercadoPagoIntegracion(MercadoPagoIntegracionException ex,
+                                                                            HttpServletRequest request) {
+        log.error("Falla de integración con Mercado Pago [{}]: {}", request.getRequestURI(), ex.getMessage(), ex);
+        return responder(HttpStatus.BAD_GATEWAY, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(DatosBancariosNoConfiguradosException.class)
+    public ResponseEntity<ApiErrorResponse> handleDatosBancariosNoConfigurados(DatosBancariosNoConfiguradosException ex,
+                                                                                  HttpServletRequest request) {
+        log.warn("Datos bancarios no configurados [{}]: {}", request.getRequestURI(), ex.getMessage());
+        return responder(HttpStatus.NOT_FOUND, ex.getMessage(), request);
+    }
+
     @ExceptionHandler(CuotaNoEncontradaException.class)
     public ResponseEntity<ApiErrorResponse> handleCuotaNoEncontrada(CuotaNoEncontradaException ex,
                                                                       HttpServletRequest request) {
@@ -290,6 +305,18 @@ public class GlobalExceptionHandler {
                                                                       HttpServletRequest request) {
         log.warn("Parámetro obligatorio ausente [{}]: {}", request.getRequestURI(), ex.getMessage());
         return responder(HttpStatus.BAD_REQUEST, "Falta el parámetro obligatorio: " + ex.getParameterName(), request);
+    }
+
+    @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
+    public ResponseEntity<ApiErrorResponse> handleMediaTypeNoSoportado(HttpMediaTypeNotSupportedException ex,
+                                                                         HttpServletRequest request) {
+        // Típicamente pasa cuando un endpoint espera multipart/form-data (ej. subir
+        // un archivo) y el cliente mandó Content-Type: application/json a secas.
+        log.warn("Content-Type no soportado [{}]: {}", request.getRequestURI(), ex.getMessage());
+        return responder(HttpStatus.UNSUPPORTED_MEDIA_TYPE,
+                "El Content-Type '" + ex.getContentType() + "' no es válido para esta petición"
+                        + (ex.getSupportedMediaTypes().isEmpty() ? "" : " (esperado: " + ex.getSupportedMediaTypes() + ")"),
+                request);
     }
 
     @ExceptionHandler(HttpRequestMethodNotSupportedException.class)

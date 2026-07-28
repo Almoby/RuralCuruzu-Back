@@ -5,18 +5,23 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.EnumSet;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Predicate;
+import java.util.stream.Collectors;
 
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
 
 import com.almoby.ruralcuruzu.domain.Cuota;
-import com.almoby.ruralcuruzu.domain.DatosPago;
 import com.almoby.ruralcuruzu.domain.EjecucionGeneracionCuotas;
+import com.almoby.ruralcuruzu.domain.Pago;
 import com.almoby.ruralcuruzu.domain.ReglaCuota;
 import com.almoby.ruralcuruzu.domain.Socio;
 import com.almoby.ruralcuruzu.dto.request.AnularCuotaRequest;
@@ -28,21 +33,31 @@ import com.almoby.ruralcuruzu.dto.response.CuotaResumenResponse;
 import com.almoby.ruralcuruzu.dto.response.EstadoCuentaSocioResponse;
 import com.almoby.ruralcuruzu.dto.response.GeneracionCuotasResponse;
 import com.almoby.ruralcuruzu.dto.response.InformarPagoResponse;
+import com.almoby.ruralcuruzu.dto.response.LinkDePagoResponse;
+import com.almoby.ruralcuruzu.dto.response.PagoResponse;
 import com.almoby.ruralcuruzu.dto.response.RegistrarPagoResponse;
 import com.almoby.ruralcuruzu.dto.response.ResumenCuotasResponse;
+import com.almoby.ruralcuruzu.dto.response.RevisarPagoInformadoResponse;
 import com.almoby.ruralcuruzu.enums.EstadoCuota;
+import com.almoby.ruralcuruzu.enums.EstadoPago;
 import com.almoby.ruralcuruzu.enums.EstadoSocio;
 import com.almoby.ruralcuruzu.enums.MedioPago;
 import com.almoby.ruralcuruzu.enums.OrigenEjecucionCuotas;
+import com.almoby.ruralcuruzu.exception.ArchivoInvalidoException;
 import com.almoby.ruralcuruzu.exception.CuotaEstadoInvalidoException;
 import com.almoby.ruralcuruzu.exception.CuotaNoEncontradaException;
 import com.almoby.ruralcuruzu.exception.SocioNoEncontradoException;
 import com.almoby.ruralcuruzu.repository.CuotaRepository;
 import com.almoby.ruralcuruzu.repository.EjecucionGeneracionCuotasRepository;
+import com.almoby.ruralcuruzu.repository.PagoRepository;
 import com.almoby.ruralcuruzu.repository.ReglaCuotaRepository;
 import com.almoby.ruralcuruzu.repository.SocioRepository;
+import com.almoby.ruralcuruzu.service.AlmacenamientoComprobantesService;
 import com.almoby.ruralcuruzu.service.CuotaService;
 import com.almoby.ruralcuruzu.service.EmailService;
+import com.almoby.ruralcuruzu.service.EstadoPagoMercadoPago;
+import com.almoby.ruralcuruzu.service.MercadoPagoService;
+import com.almoby.ruralcuruzu.service.PreferenciaMercadoPago;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -72,6 +87,12 @@ import lombok.extern.slf4j.Slf4j;
  *   así que sí o sí pasa por revisión. Por eso informarPago solo acepta
  *   MedioPago.TRANSFERENCIA: es la única forma de pagar a distancia.
  * - VENCIDA se aplica con un job diario (marcarCuotasVencidas), no al vuelo.
+ * - RN-17: el pago es su propia entidad de base de datos ({@link Pago}, no
+ *   embebido en Cuota): una misma cuota puede tener más de un Pago a lo
+ *   largo del tiempo (ej. una transferencia rechazada y un segundo intento
+ *   aprobado), y ninguno se sobrescribe ni se borra. Por eso informarPago ya
+ *   no queda "trabado" después de un rechazo: RECHAZADA vuelve a admitir un
+ *   nuevo intento, que crea un Pago nuevo sin tocar el rechazado anterior.
  */
 @Slf4j
 @Service
@@ -81,21 +102,30 @@ public class CuotaServiceImpl implements CuotaService {
             EnumSet.of(EstadoCuota.PENDIENTE, EstadoCuota.VENCIDA, EstadoCuota.EN_REVISION);
 
     private final CuotaRepository cuotaRepository;
+    private final PagoRepository pagoRepository;
     private final EjecucionGeneracionCuotasRepository ejecucionRepository;
     private final SocioRepository socioRepository;
     private final EmailService emailService;
     private final ReglaCuotaRepository reglaCuotaRepository;
+    private final AlmacenamientoComprobantesService almacenamientoComprobantesService;
+    private final MercadoPagoService mercadoPagoService;
 
     public CuotaServiceImpl(CuotaRepository cuotaRepository,
+                             PagoRepository pagoRepository,
                              EjecucionGeneracionCuotasRepository ejecucionRepository,
                              SocioRepository socioRepository,
                              EmailService emailService,
-                             ReglaCuotaRepository reglaCuotaRepository) {
+                             ReglaCuotaRepository reglaCuotaRepository,
+                             AlmacenamientoComprobantesService almacenamientoComprobantesService,
+                             MercadoPagoService mercadoPagoService) {
         this.cuotaRepository = cuotaRepository;
+        this.pagoRepository = pagoRepository;
         this.ejecucionRepository = ejecucionRepository;
         this.socioRepository = socioRepository;
         this.emailService = emailService;
         this.reglaCuotaRepository = reglaCuotaRepository;
+        this.almacenamientoComprobantesService = almacenamientoComprobantesService;
+        this.mercadoPagoService = mercadoPagoService;
     }
 
     /** Cron mensual: 1º de cada mes a las 6 AM (documento 10.2: "el sistema deberá generar automáticamente"). */
@@ -212,26 +242,43 @@ public class CuotaServiceImpl implements CuotaService {
             base = cuotaRepository.findAll();
         }
 
-        return base.stream()
+        List<Cuota> filtradas = base.stream()
                 .filter(c -> estado == null || c.getEstado() == estado)
                 .filter(c -> socioId == null || c.getSocioId().equals(socioId))
                 .filter(c -> periodo == null || c.getPeriodo().equals(periodo))
-                .map(CuotaResumenResponse::from)
+                .toList();
+
+        Map<String, Pago> pagoVigentePorCuota = pagosVigentesPorCuotaId(idsDe(filtradas));
+        return filtradas.stream()
+                .map(c -> CuotaResumenResponse.from(c, pagoVigentePorCuota.get(c.getId())))
                 .toList();
     }
 
     @Override
     public List<CuotaResumenResponse> listarCuotasDeSocio(String socioId) {
-        return cuotaRepository.findBySocioId(socioId).stream().map(CuotaResumenResponse::from).toList();
+        List<Cuota> cuotas = cuotaRepository.findBySocioId(socioId);
+        Map<String, Pago> pagoVigentePorCuota = pagosVigentesPorCuotaId(idsDe(cuotas));
+        return cuotas.stream()
+                .map(c -> CuotaResumenResponse.from(c, pagoVigentePorCuota.get(c.getId())))
+                .toList();
+    }
+
+    @Override
+    public List<PagoResponse> listarPagosDeSocio(String socioId) {
+        return pagoRepository.findBySocioIdOrderByFechaCreacionDesc(socioId).stream()
+                .map(PagoResponse::from)
+                .toList();
     }
 
     @Override
     public ResumenCuotasResponse obtenerResumen() {
         List<Cuota> todas = cuotaRepository.findAll();
+        Map<String, Pago> pagoAprobadoPorCuota = pagoRepository.findByEstado(EstadoPago.APROBADO).stream()
+                .collect(Collectors.toMap(Pago::getCuotaId, pago -> pago, (a, b) -> a));
 
-        BigDecimal totalCobrado = sumaPagada(todas, cuota -> true);
-        BigDecimal totalCobradoEnEfectivo = sumaPagada(todas,
-                cuota -> cuota.getDatosPago() != null && cuota.getDatosPago().getMedioPago() == MedioPago.EFECTIVO);
+        BigDecimal totalCobrado = sumaPagada(todas, pagoAprobadoPorCuota, pago -> true);
+        BigDecimal totalCobradoEnEfectivo = sumaPagada(todas, pagoAprobadoPorCuota,
+                pago -> pago != null && pago.getMedioPago() == MedioPago.EFECTIVO);
         BigDecimal totalEnRevision = todas.stream()
                 .filter(cuota -> cuota.getEstado() == EstadoCuota.EN_REVISION)
                 .map(Cuota::getImporte)
@@ -252,18 +299,21 @@ public class CuotaServiceImpl implements CuotaService {
                 || cuota.getEstado() == EstadoCuota.EN_REVISION;
     }
 
-    /** Suma el importe efectivamente pagado (datosPago.importe) de las cuotas PAGADA que cumplan el filtro. */
-    private BigDecimal sumaPagada(List<Cuota> cuotas, Predicate<Cuota> filtroAdicional) {
+    /** Suma el importe efectivamente pagado (pago.importe) de las cuotas PAGADA que cumplan el filtro. */
+    private BigDecimal sumaPagada(List<Cuota> cuotas, Map<String, Pago> pagoAprobadoPorCuota,
+                                   Predicate<Pago> filtroAdicional) {
         return cuotas.stream()
                 .filter(cuota -> cuota.getEstado() == EstadoCuota.PAGADA)
+                .map(cuota -> pagoAprobadoPorCuota.get(cuota.getId()))
                 .filter(filtroAdicional)
-                .map(cuota -> cuota.getDatosPago() != null ? cuota.getDatosPago().getImporte() : cuota.getImporte())
+                .map(pago -> pago != null ? pago.getImporte() : BigDecimal.ZERO)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
     @Override
     public CuotaResponse obtenerCuotaPorId(String id) {
-        return CuotaResponse.from(buscarOFallar(id));
+        Cuota cuota = buscarOFallar(id);
+        return CuotaResponse.from(cuota, pagoVigentePara(cuota.getId()));
     }
 
     @Override
@@ -272,39 +322,51 @@ public class CuotaServiceImpl implements CuotaService {
                 .map(periodo -> buscarCuotaDeSocioEnPeriodo(request.socioId(), periodo))
                 .toList();
 
+        List<CuotaResponse> respuestas = new ArrayList<>();
         for (Cuota cuota : cuotas) {
             validarPuedeRegistrarPago(cuota);
 
+            Instant ahora = Instant.now();
             // El importe pagado es el de la propia cuota (fijado al generarla, según la
             // regla de cuota vigente para su categoría en ese momento), no un valor que
             // tipee el admin: así no se puede registrar un pago por un monto que no
             // coincida con lo adeudado.
-            DatosPago datosPago = DatosPago.builder()
+            Pago pago = Pago.builder()
+                    .cuotaId(cuota.getId())
+                    .socioId(cuota.getSocioId())
+                    .socioNumeroSocio(cuota.getSocioNumeroSocio())
+                    .socioNombre(cuota.getSocioNombre())
+                    .periodo(cuota.getPeriodo())
                     .fechaPago(request.fecha().atStartOfDay(ZoneOffset.UTC).toInstant())
                     .importe(cuota.getImporte())
                     .medioPago(request.medioPago())
-                    .comprobante(request.comprobante())
+                    .comprobanteRuta(request.comprobante())
                     .observacion(request.observacion())
+                    .estado(EstadoPago.APROBADO)
                     .informadoPorSocio(false)
                     .registradoPorAdminId(adminId)
                     .registradoPorAdminNombre(adminNombre)
+                    .fechaCreacion(ahora)
+                    .fechaActualizacion(ahora)
                     .build();
+            pagoRepository.save(pago);
 
-            cuota.setDatosPago(datosPago);
             cuota.setEstado(EstadoCuota.PAGADA);
-            cuota.setFechaActualizacion(Instant.now());
+            cuota.setFechaActualizacion(ahora);
             cuotaRepository.save(cuota);
 
             log.info("Cuota id={} marcada PAGADA (registro manual, admin={})", cuota.getId(), adminNombre);
 
-            notificarPagoRegistrado(cuota);
+            notificarPagoRegistrado(cuota, pago);
+            respuestas.add(CuotaResponse.from(cuota, pago));
         }
 
-        return RegistrarPagoResponse.of(cuotas.stream().map(CuotaResponse::from).toList());
+        return RegistrarPagoResponse.of(respuestas);
     }
 
     @Override
-    public InformarPagoResponse informarPago(String cuotaId, InformarPagoCuotaRequest request, String socioId) {
+    public InformarPagoResponse informarPago(String cuotaId, InformarPagoCuotaRequest request,
+                                              MultipartFile comprobante, String socioId) {
         Cuota cuota = buscarOFallar(cuotaId);
 
         if (!cuota.getSocioId().equals(socioId)) {
@@ -313,42 +375,62 @@ public class CuotaServiceImpl implements CuotaService {
         }
 
         if (request.medioPago() != MedioPago.TRANSFERENCIA) {
-            // La única forma de pagar a distancia es transferencia + comprobante;
-            // efectivo, débito y "ventanilla" implican pagar en persona en la
-            // oficina, donde es el admin quien registra el pago directamente
-            // (CuotaServiceImpl.registrarPago), sin pasar por esta revisión.
+            // La única forma de pagar a distancia por autoservicio "informando" un pago
+            // es transferencia + comprobante; el link de pago tiene su propio flujo
+            // (CuotaService.generarLinkDePago), y efectivo/débito/ventanilla se pagan y
+            // registran presencialmente en la oficina (CuotaServiceImpl.registrarPago).
             throw new CuotaEstadoInvalidoException(
                     "Solo se puede informar un pago por transferencia; los demás medios se pagan y "
                             + "registran presencialmente en la oficina");
         }
 
-        if (cuota.getEstado() != EstadoCuota.PENDIENTE && cuota.getEstado() != EstadoCuota.VENCIDA) {
-            throw new CuotaEstadoInvalidoException(
-                    "No se puede informar un pago para una cuota en estado " + cuota.getEstado());
+        // RN-17: un Pago es su propia entidad, así que un rechazo previo no deja la
+        // cuota trabada: RECHAZADA vuelve a admitir un nuevo intento, que crea un
+        // Pago nuevo sin tocar el rechazado anterior (que sigue existiendo como
+        // historial).
+        validarEstadoAdmiteNuevoIntentoDePago(cuota);
+
+        if (comprobante == null || comprobante.isEmpty()) {
+            throw new ArchivoInvalidoException("El comprobante de la transferencia es obligatorio");
         }
 
-        DatosPago datosPago = DatosPago.builder()
+        Instant ahora = Instant.now();
+        Pago pago = Pago.builder()
+                .cuotaId(cuota.getId())
+                .socioId(cuota.getSocioId())
+                .socioNumeroSocio(cuota.getSocioNumeroSocio())
+                .socioNombre(cuota.getSocioNombre())
+                .periodo(cuota.getPeriodo())
                 .fechaPago(request.fecha().atStartOfDay(ZoneOffset.UTC).toInstant())
                 .importe(request.importe())
                 .medioPago(request.medioPago())
-                .comprobante(request.comprobante())
                 .observacion(request.observacion())
+                .estado(EstadoPago.EN_REVISION)
                 .informadoPorSocio(true)
+                .fechaCreacion(ahora)
+                .fechaActualizacion(ahora)
                 .build();
+        // Se guarda antes de subir el archivo porque el comprobante se guarda en una
+        // subcarpeta con el id del pago, y Mongo recién lo asigna al persistir.
+        pagoRepository.save(pago);
 
-        cuota.setDatosPago(datosPago);
+        String comprobanteRuta = almacenamientoComprobantesService.guardar(pago.getId(), comprobante);
+        pago.setComprobanteRuta(comprobanteRuta);
+        pagoRepository.save(pago);
+
         cuota.setEstado(EstadoCuota.EN_REVISION);
-        cuota.setFechaActualizacion(Instant.now());
+        cuota.setMotivoRechazo(null);
+        cuota.setFechaActualizacion(ahora);
         cuotaRepository.save(cuota);
 
         log.info("Socio id={} informó un pago para cuota id={}", socioId, cuotaId);
 
-        return InformarPagoResponse.of(CuotaResponse.from(cuota));
+        return InformarPagoResponse.of(CuotaResponse.from(cuota, pago));
     }
 
     @Override
-    public CuotaResponse revisarPagoInformado(String cuotaId, RevisarPagoInformadoRequest request,
-                                               String adminId, String adminNombre) {
+    public RevisarPagoInformadoResponse revisarPagoInformado(String cuotaId, RevisarPagoInformadoRequest request,
+                                                              String adminId, String adminNombre) {
         Cuota cuota = buscarOFallar(cuotaId);
 
         if (cuota.getEstado() != EstadoCuota.EN_REVISION) {
@@ -356,30 +438,55 @@ public class CuotaServiceImpl implements CuotaService {
                     "Solo se puede revisar una cuota en estado EN_REVISION (estado actual: " + cuota.getEstado() + ")");
         }
 
+        Pago pago = pagoRepository.findByCuotaIdAndEstado(cuotaId, EstadoPago.EN_REVISION)
+                .orElseThrow(() -> new CuotaEstadoInvalidoException(
+                        "No hay ningún pago en revisión para esta cuota"));
+
+        Instant ahora = Instant.now();
+        // Qué Pago va en la respuesta como "pagoVigente": solo el recién aprobado
+        // (que sí es genuinamente vigente); uno recién rechazado no lo es (ver el
+        // contrato documentado en CuotaResponse: vigente = APROBADO o EN_REVISION,
+        // si no, null), así que la respuesta de un rechazo no lo incluye ahí — el
+        // motivo del rechazo se ve igual en CuotaResponse.motivoRechazo.
+        Pago pagoParaLaRespuesta;
         if (Boolean.TRUE.equals(request.aprobar())) {
-            cuota.getDatosPago().setRegistradoPorAdminId(adminId);
-            cuota.getDatosPago().setRegistradoPorAdminNombre(adminNombre);
+            pago.setEstado(EstadoPago.APROBADO);
+            pago.setRegistradoPorAdminId(adminId);
+            pago.setRegistradoPorAdminNombre(adminNombre);
+            pago.setFechaActualizacion(ahora);
+            pagoRepository.save(pago);
+
             cuota.setEstado(EstadoCuota.PAGADA);
+            pagoParaLaRespuesta = pago;
 
             log.info("Admin={} aprobó el pago informado de cuota id={}", adminNombre, cuotaId);
-            notificarPagoRegistrado(cuota);
+            notificarPagoRegistrado(cuota, pago);
         } else {
             if (request.motivoRechazo() == null || request.motivoRechazo().isBlank()) {
                 throw new CuotaEstadoInvalidoException("El motivo es obligatorio para rechazar un pago informado");
             }
 
+            pago.setEstado(EstadoPago.RECHAZADO);
+            pago.setMotivoRechazo(request.motivoRechazo());
+            pago.setRegistradoPorAdminId(adminId);
+            pago.setRegistradoPorAdminNombre(adminNombre);
+            pago.setFechaActualizacion(ahora);
+            pagoRepository.save(pago);
+
             cuota.setEstado(EstadoCuota.RECHAZADA);
             cuota.setMotivoRechazo(request.motivoRechazo());
+            pagoParaLaRespuesta = null;
 
             log.info("Admin={} rechazó el pago informado de cuota id={} motivo={}",
                     adminNombre, cuotaId, request.motivoRechazo());
             notificarPagoRechazado(cuota);
         }
 
-        cuota.setFechaActualizacion(Instant.now());
+        cuota.setFechaActualizacion(ahora);
         cuotaRepository.save(cuota);
 
-        return CuotaResponse.from(cuota);
+        return RevisarPagoInformadoResponse.of(
+                CuotaResponse.from(cuota, pagoParaLaRespuesta), Boolean.TRUE.equals(request.aprobar()));
     }
 
     @Override
@@ -397,7 +504,143 @@ public class CuotaServiceImpl implements CuotaService {
 
         log.info("Admin={} anuló la cuota id={} motivo={}", adminNombre, id, request.motivo());
 
-        return CuotaResponse.from(cuota);
+        return CuotaResponse.from(cuota, pagoVigentePara(id));
+    }
+
+    @Override
+    public LinkDePagoResponse generarLinkDePago(String cuotaId, String socioId) {
+        Cuota cuota = buscarOFallar(cuotaId);
+
+        if (!cuota.getSocioId().equals(socioId)) {
+            throw new CuotaNoEncontradaException(cuotaId);
+        }
+
+        // Mismos estados que informarPago: RN-17 hace que un rechazo previo (ya
+        // sea de una transferencia o de un intento anterior de link de pago) no
+        // deje la cuota trabada, siempre se puede volver a intentar.
+        validarEstadoAdmiteNuevoIntentoDePago(cuota);
+
+        Instant ahora = Instant.now();
+        Pago pago = Pago.builder()
+                .cuotaId(cuota.getId())
+                .socioId(cuota.getSocioId())
+                .socioNumeroSocio(cuota.getSocioNumeroSocio())
+                .socioNombre(cuota.getSocioNombre())
+                .periodo(cuota.getPeriodo())
+                .importe(cuota.getImporte())
+                .medioPago(MedioPago.LINK_DE_PAGO)
+                .estado(EstadoPago.EN_REVISION)
+                .informadoPorSocio(true)
+                .fechaCreacion(ahora)
+                .fechaActualizacion(ahora)
+                .build();
+        // Igual que en informarPago: se guarda primero para tener el id del Pago,
+        // que viaja como external_reference a Mercado Pago (así el webhook puede
+        // encontrar de nuevo este mismo Pago).
+        pagoRepository.save(pago);
+
+        String descripcion = "Cuota " + cuota.getPeriodo() + " - " + cuota.getSocioNombre();
+        PreferenciaMercadoPago preferencia =
+                mercadoPagoService.crearPreferencia(pago.getId(), descripcion, cuota.getImporte());
+
+        pago.setMercadoPagoPreferenceId(preferencia.preferenceId());
+        pagoRepository.save(pago);
+
+        cuota.setEstado(EstadoCuota.EN_REVISION);
+        cuota.setMotivoRechazo(null);
+        cuota.setFechaActualizacion(ahora);
+        cuotaRepository.save(cuota);
+
+        log.info("Socio id={} generó un link de pago para cuota id={} pagoId={} preferenceId={}",
+                socioId, cuotaId, pago.getId(), preferencia.preferenceId());
+
+        return LinkDePagoResponse.of(pago.getId(), preferencia.initPoint());
+    }
+
+    @Override
+    public void procesarNotificacionMercadoPago(String mercadoPagoPaymentId) {
+        // Nunca se confía en el contenido del webhook: siempre se reconsulta el
+        // estado real del pago contra la propia API de Mercado Pago.
+        EstadoPagoMercadoPago estadoReal = mercadoPagoService.consultarPago(mercadoPagoPaymentId);
+
+        String pagoId = estadoReal.externalReference();
+        if (pagoId == null) {
+            log.warn("Notificación de Mercado Pago sin external_reference (paymentId={}), se ignora",
+                    mercadoPagoPaymentId);
+            return;
+        }
+
+        Pago pago = pagoRepository.findById(pagoId).orElse(null);
+        if (pago == null) {
+            log.warn("Notificación de Mercado Pago para un Pago inexistente (pagoId={}, paymentId={}), se ignora",
+                    pagoId, mercadoPagoPaymentId);
+            return;
+        }
+
+        // Idempotencia: si este Pago ya quedó resuelto (por una notificación
+        // anterior, ya sea aprobado o rechazado), una notificación repetida no
+        // hace nada más.
+        if (pago.getEstado() != EstadoPago.EN_REVISION) {
+            log.info("Pago id={} ya estaba resuelto (estado={}), se ignora notificación repetida de Mercado Pago",
+                    pagoId, pago.getEstado());
+            return;
+        }
+
+        Cuota cuota = cuotaRepository.findById(pago.getCuotaId()).orElse(null);
+        if (cuota == null) {
+            log.warn("Pago id={} referencia una cuota inexistente (cuotaId={}), se ignora", pagoId, pago.getCuotaId());
+            return;
+        }
+
+        Instant ahora = Instant.now();
+        // El id de Mercado Pago se registra siempre (sirve para trazabilidad aunque
+        // todavía esté pending), pero fechaPago (la fecha real de la transacción)
+        // recién se fija cuando el resultado es definitivo: no tendría sentido decir
+        // que un pago "pending" ya se pagó.
+        pago.setMercadoPagoPaymentId(estadoReal.mercadoPagoPaymentId());
+        pago.setFechaActualizacion(ahora);
+
+        if (estadoReal.aprobado()) {
+            pago.setEstado(EstadoPago.APROBADO);
+            pago.setFechaPago(ahora);
+            pagoRepository.save(pago);
+
+            cuota.setEstado(EstadoCuota.PAGADA);
+            cuota.setFechaActualizacion(ahora);
+            cuotaRepository.save(cuota);
+
+            log.info("Mercado Pago aprobó el pago id={} de cuota id={}", pagoId, cuota.getId());
+            notificarPagoRegistrado(cuota, pago);
+        } else if (estadoReal.rechazado()) {
+            pago.setEstado(EstadoPago.RECHAZADO);
+            pago.setFechaPago(ahora);
+            pago.setMotivoRechazo("Pago rechazado por Mercado Pago");
+            pagoRepository.save(pago);
+
+            // Igual que un rechazo de transferencia (RN-17): el socio puede
+            // volver a intentar, ya sea con un nuevo link de pago o transfiriendo.
+            cuota.setEstado(EstadoCuota.RECHAZADA);
+            cuota.setMotivoRechazo("Pago rechazado por Mercado Pago");
+            cuota.setFechaActualizacion(ahora);
+            cuotaRepository.save(cuota);
+
+            log.info("Mercado Pago rechazó el pago id={} de cuota id={}", pagoId, cuota.getId());
+            notificarPagoRechazado(cuota);
+        } else {
+            // "pending" / "in_process": todavía no hay nada definitivo, solo se
+            // deja registrado el id de Mercado Pago para la próxima consulta.
+            pagoRepository.save(pago);
+            log.info("Pago id={} sigue pendiente en Mercado Pago (status={})", pagoId, estadoReal.status());
+        }
+    }
+
+    /** Válido tanto para informarPago (transferencia) como para generarLinkDePago (Mercado Pago). */
+    private void validarEstadoAdmiteNuevoIntentoDePago(Cuota cuota) {
+        if (cuota.getEstado() != EstadoCuota.PENDIENTE && cuota.getEstado() != EstadoCuota.VENCIDA
+                && cuota.getEstado() != EstadoCuota.RECHAZADA) {
+            throw new CuotaEstadoInvalidoException(
+                    "No se puede intentar un nuevo pago para una cuota en estado " + cuota.getEstado());
+        }
     }
 
     @Override
@@ -411,19 +654,21 @@ public class CuotaServiceImpl implements CuotaService {
                 .map(Cuota::getImporte)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
+        Map<String, Pago> pagoVigentePorCuota = pagosVigentesPorCuotaId(idsDe(cuotas));
+
         return new EstadoCuentaSocioResponse(
                 socio.getId(),
                 socio.getNumeroSocio(),
                 socio.nombreParaMostrar(),
                 deudaTotal,
-                cuotas.stream().map(CuotaResumenResponse::from).toList());
+                cuotas.stream().map(c -> CuotaResumenResponse.from(c, pagoVigentePorCuota.get(c.getId()))).toList());
     }
 
-    private void notificarPagoRegistrado(Cuota cuota) {
+    private void notificarPagoRegistrado(Cuota cuota, Pago pago) {
         Socio socio = socioRepository.findById(cuota.getSocioId()).orElse(null);
         if (socio != null && socio.obtenerEmail() != null) {
             emailService.enviarCorreoPagoRegistrado(
-                    socio.obtenerEmail(), socio.nombreParaMostrar(), cuota.getPeriodo(), cuota.getDatosPago().getImporte());
+                    socio.obtenerEmail(), socio.nombreParaMostrar(), cuota.getPeriodo(), pago.getImporte());
         }
     }
 
@@ -449,5 +694,37 @@ public class CuotaServiceImpl implements CuotaService {
     private Cuota buscarCuotaDeSocioEnPeriodo(String socioId, String periodo) {
         return cuotaRepository.findBySocioIdAndPeriodo(socioId, periodo)
                 .orElseThrow(() -> CuotaNoEncontradaException.paraSocioYPeriodo(socioId, periodo));
+    }
+
+    private List<String> idsDe(List<Cuota> cuotas) {
+        return cuotas.stream().map(Cuota::getId).toList();
+    }
+
+    /**
+     * El pago vigente de UNA cuota: el APROBADO si existe, si no el EN_REVISION,
+     * si no {@code null}. Para listados de varias cuotas usar
+     * {@link #pagosVigentesPorCuotaId} (evita N+1).
+     */
+    private Pago pagoVigentePara(String cuotaId) {
+        return pagoRepository.findByCuotaIdAndEstado(cuotaId, EstadoPago.APROBADO)
+                .or(() -> pagoRepository.findByCuotaIdAndEstado(cuotaId, EstadoPago.EN_REVISION))
+                .orElse(null);
+    }
+
+    /** Igual que {@link #pagoVigentePara}, pero para varias cuotas en una sola consulta. */
+    private Map<String, Pago> pagosVigentesPorCuotaId(List<String> cuotaIds) {
+        if (cuotaIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, List<Pago>> pagosPorCuota = pagoRepository.findByCuotaIdIn(cuotaIds).stream()
+                .collect(Collectors.groupingBy(Pago::getCuotaId));
+
+        Map<String, Pago> resultado = new HashMap<>();
+        pagosPorCuota.forEach((cuotaId, pagos) -> {
+            Optional<Pago> vigente = pagos.stream().filter(p -> p.getEstado() == EstadoPago.APROBADO).findFirst()
+                    .or(() -> pagos.stream().filter(p -> p.getEstado() == EstadoPago.EN_REVISION).findFirst());
+            vigente.ifPresent(pago -> resultado.put(cuotaId, pago));
+        });
+        return resultado;
     }
 }

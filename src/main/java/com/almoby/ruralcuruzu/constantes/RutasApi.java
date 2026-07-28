@@ -35,6 +35,11 @@ public final class RutasApi {
     /** Ruta pública sin login: el solicitante responde una observación desde el link del correo. */
     public static final String RESPUESTA_SOLICITUD_BASE = "/api/respuesta-solicitud";
     public static final String RESPUESTA_SOLICITUD = RESPUESTA_SOLICITUD_BASE + "/**";
+    public static final String ADMIN_DATOS_BANCARIOS_BASE = "/api/admin/datos-bancarios";
+    public static final String ADMIN_DATOS_BANCARIOS = ADMIN_DATOS_BANCARIOS_BASE + "/**";
+    /** Ruta pública sin login: la llama Mercado Pago, no un usuario nuestro. */
+    public static final String MERCADO_PAGO_WEBHOOK_BASE = "/api/pagos/mercado-pago/webhook";
+    public static final String MERCADO_PAGO_WEBHOOK = MERCADO_PAGO_WEBHOOK_BASE + "/**";
 
     public static final String SWAGGER_UI_HTML = "/swagger-ui.html";
     public static final String SWAGGER_UI = "/swagger-ui/**";

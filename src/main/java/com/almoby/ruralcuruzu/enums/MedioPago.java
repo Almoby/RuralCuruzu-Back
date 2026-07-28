@@ -7,7 +7,10 @@ package com.almoby.ruralcuruzu.enums;
  * apruebe), o presencialmente en la oficina rural ("ventanilla"), donde el
  * admin cobra en persona y solo registra el pago sin esperar revisión —
  * ahí puede ser en efectivo, débito/crédito (postnet) o incluso una
- * transferencia hecha en el momento.
+ * transferencia hecha en el momento. Se suma un tercer canal, LINK_DE_PAGO:
+ * el socio paga online (tarjeta o billetera virtual) a través de una
+ * pasarela de pago (hoy, Mercado Pago); la propia pasarela confirma el
+ * pago, así que tampoco pasa por revisión manual de un admin.
  *
  * VENTANILLA queda como opción genérica para cuando el admin registra un
  * pago presencial sin necesidad de precisar si fue efectivo, débito o
@@ -17,5 +20,6 @@ public enum MedioPago {
     EFECTIVO,
     VENTANILLA,
     TRANSFERENCIA,
-    DEBITO
+    DEBITO,
+    LINK_DE_PAGO
 }

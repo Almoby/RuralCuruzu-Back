@@ -8,15 +8,18 @@ import java.util.List;
 import org.springframework.stereotype.Service;
 
 import com.almoby.ruralcuruzu.domain.Cuota;
+import com.almoby.ruralcuruzu.domain.Pago;
 import com.almoby.ruralcuruzu.domain.Socio;
 import com.almoby.ruralcuruzu.domain.Usuario;
 import com.almoby.ruralcuruzu.dto.response.EstadoQrResponse;
 import com.almoby.ruralcuruzu.enums.EstadoCuota;
+import com.almoby.ruralcuruzu.enums.EstadoPago;
 import com.almoby.ruralcuruzu.enums.EstadoQr;
 import com.almoby.ruralcuruzu.enums.EstadoSocio;
 import com.almoby.ruralcuruzu.enums.EstadoUsuario;
 import com.almoby.ruralcuruzu.exception.QrNoValidoException;
 import com.almoby.ruralcuruzu.repository.CuotaRepository;
+import com.almoby.ruralcuruzu.repository.PagoRepository;
 import com.almoby.ruralcuruzu.repository.UsuarioRepository;
 import com.almoby.ruralcuruzu.service.EstadoQrService;
 
@@ -35,10 +38,13 @@ import com.almoby.ruralcuruzu.service.EstadoQrService;
 public class EstadoQrServiceImpl implements EstadoQrService {
 
     private final CuotaRepository cuotaRepository;
+    private final PagoRepository pagoRepository;
     private final UsuarioRepository usuarioRepository;
 
-    public EstadoQrServiceImpl(CuotaRepository cuotaRepository, UsuarioRepository usuarioRepository) {
+    public EstadoQrServiceImpl(CuotaRepository cuotaRepository, PagoRepository pagoRepository,
+                                UsuarioRepository usuarioRepository) {
         this.cuotaRepository = cuotaRepository;
+        this.pagoRepository = pagoRepository;
         this.usuarioRepository = usuarioRepository;
     }
 
@@ -104,12 +110,13 @@ public class EstadoQrServiceImpl implements EstadoQrService {
                 .orElse(null);
     }
 
-    /** Fecha del último pago acreditado (la cuota PAGADA más reciente), si tiene alguno. */
+    /** Fecha del último pago acreditado (el Pago APROBADO de la cuota PAGADA más reciente), si tiene alguno. */
     private Instant ultimoPago(List<Cuota> cuotas) {
         return cuotas.stream()
-                .filter(c -> c.getEstado() == EstadoCuota.PAGADA && c.getDatosPago() != null)
+                .filter(c -> c.getEstado() == EstadoCuota.PAGADA)
                 .max(Comparator.comparing(Cuota::getPeriodo))
-                .map(c -> c.getDatosPago().getFechaPago())
+                .flatMap(c -> pagoRepository.findByCuotaIdAndEstado(c.getId(), EstadoPago.APROBADO))
+                .map(Pago::getFechaPago)
                 .orElse(null);
     }
 }
