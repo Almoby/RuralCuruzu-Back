@@ -242,6 +242,7 @@ class BeneficioServiceImplTest {
     void actualizarBeneficio_pausadoAMano_noSeReactivaSoloAunqueLaFechaSigaVigente() {
         Beneficio beneficio = beneficioVigente("beneficio-1", "comercio-1");
         beneficio.setEstado(EstadoBeneficio.INACTIVO); // el comercio lo pausó, no venció
+        beneficio.setPausadoManualmente(true);
         beneficio.setFechaFinVigencia(LocalDate.now().plusDays(30));
         when(beneficioRepository.findById("beneficio-1")).thenReturn(Optional.of(beneficio));
         when(beneficioRepository.save(any(Beneficio.class))).thenAnswer(inv -> inv.getArgument(0));

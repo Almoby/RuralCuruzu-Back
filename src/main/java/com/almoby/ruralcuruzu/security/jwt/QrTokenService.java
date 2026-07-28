@@ -4,6 +4,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Date;
+import java.util.UUID;
 
 import javax.crypto.SecretKey;
 
@@ -52,7 +53,11 @@ public class QrTokenService {
         Instant ahora = Instant.now();
         Instant expiracion = ahora.plus(Duration.ofSeconds(validezSegundos));
 
+        // El id aleatorio (jti) es necesario para que dos QR generados dentro del mismo
+        // segundo no den el token exacto (mismo subject/iat/exp -> misma firma): sin esto,
+        // dos llamadas seguidas eran indistinguibles entre sí.
         String token = Jwts.builder()
+                .id(UUID.randomUUID().toString())
                 .subject(socioId)
                 .issuedAt(Date.from(ahora))
                 .expiration(Date.from(expiracion))
