@@ -17,7 +17,6 @@ import com.almoby.ruralcuruzu.domain.CambioEstadoSolicitud;
 import com.almoby.ruralcuruzu.domain.DatosPersonaFisica;
 import com.almoby.ruralcuruzu.domain.DatosPersonaJuridica;
 import com.almoby.ruralcuruzu.domain.SolicitudSocio;
-import com.almoby.ruralcuruzu.domain.Usuario;
 import com.almoby.ruralcuruzu.enums.EstadoSolicitud;
 import com.almoby.ruralcuruzu.enums.Rol;
 import com.almoby.ruralcuruzu.enums.TipoPersona;
