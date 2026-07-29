@@ -5,6 +5,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 
 /**
  * Utilidades de fecha compartidas entre servicios que calculan indicadores
@@ -18,6 +19,9 @@ public final class FechaUtil {
     public static final String[] NOMBRES_MES = {
             "Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"
     };
+
+    /** Formato corto de fecha ("dd/MM/yyyy") compartido por los encabezados de los PDF generados. */
+    public static final DateTimeFormatter FORMATO_FECHA_CORTA = DateTimeFormatter.ofPattern("dd/MM/yyyy");
 
     private FechaUtil() {
     }

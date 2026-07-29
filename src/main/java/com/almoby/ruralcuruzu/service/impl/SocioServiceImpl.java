@@ -30,6 +30,7 @@ import com.almoby.ruralcuruzu.service.EmailService;
 import com.almoby.ruralcuruzu.service.EstadoQrService;
 import com.almoby.ruralcuruzu.service.SecuenciaService;
 import com.almoby.ruralcuruzu.service.SocioService;
+import com.almoby.ruralcuruzu.util.RepositorioUtil;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -181,8 +182,7 @@ public class SocioServiceImpl implements SocioService {
     }
 
     private Socio buscarOFallar(String id) {
-        return socioRepository.findById(id)
-                .orElseThrow(() -> new SocioNoEncontradoException(id));
+        return RepositorioUtil.buscarOFallar(socioRepository::findById, id, SocioNoEncontradoException::new);
     }
 
     private DatosPersonaFisica copiar(DatosPersonaFisica original) {

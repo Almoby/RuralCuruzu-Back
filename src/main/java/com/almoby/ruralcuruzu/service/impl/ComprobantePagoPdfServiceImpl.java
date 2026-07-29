@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 
 import com.almoby.ruralcuruzu.dto.response.PagoResponse;
 import com.almoby.ruralcuruzu.service.ComprobantePagoPdfService;
+import com.almoby.ruralcuruzu.util.FechaUtil;
 import com.lowagie.text.Document;
 import com.lowagie.text.DocumentException;
 import com.lowagie.text.Element;
@@ -66,7 +67,7 @@ public class ComprobantePagoPdfServiceImpl implements ComprobantePagoPdfService 
         titulo.setSpacingAfter(2);
         documento.add(titulo);
 
-        String fecha = LocalDate.now().format(DateTimeFormatter.ofPattern("dd/MM/yyyy"));
+        String fecha = LocalDate.now().format(FechaUtil.FORMATO_FECHA_CORTA);
         Paragraph subtitulo = new Paragraph("Generado el " + fecha, FUENTE_SUBTITULO);
         subtitulo.setSpacingAfter(16);
         documento.add(subtitulo);

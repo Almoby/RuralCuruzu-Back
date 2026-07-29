@@ -199,6 +199,40 @@
 					</execution>
 				</executions>
 			</plugin>
+			<plugin>
+				<!--
+					D4: warn-only unused-import lint guard. Bound to validate so it
+					runs early in the build, but it must NEVER fail it — see
+					failOnViolation/failsOnError/violationSeverity below. Ruleset is
+					config/checkstyle/checkstyle.xml (UnusedImports only).
+				-->
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-checkstyle-plugin</artifactId>
+				<version>3.6.0</version>
+				<dependencies>
+					<dependency>
+						<groupId>com.puppycrawl.tools</groupId>
+						<artifactId>checkstyle</artifactId>
+						<version>10.21.2</version>
+					</dependency>
+				</dependencies>
+				<configuration>
+					<configLocation>config/checkstyle/checkstyle.xml</configLocation>
+					<failOnViolation>false</failOnViolation>
+					<failsOnError>false</failsOnError>
+					<violationSeverity>warning</violationSeverity>
+					<consoleOutput>true</consoleOutput>
+				</configuration>
+				<executions>
+					<execution>
+						<id>unused-imports-warning</id>
+						<phase>validate</phase>
+						<goals>
+							<goal>check</goal>
+						</goals>
+					</execution>
+				</executions>
+			</plugin>
 		</plugins>
 	</build>
 

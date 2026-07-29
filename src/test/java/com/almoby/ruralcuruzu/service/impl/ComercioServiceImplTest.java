@@ -213,7 +213,8 @@ class ComercioServiceImplTest {
 
         assertThatThrownBy(() -> service.cambiarEstadoComercio(
                 "no-existe", new CambiarEstadoComercioRequest(EstadoComercio.SUSPENDIDO)))
-                .isInstanceOf(ComercioNoEncontradoException.class);
+                .isInstanceOf(ComercioNoEncontradoException.class)
+                .hasMessageContaining("no-existe");
     }
 
     @Test
@@ -221,7 +222,8 @@ class ComercioServiceImplTest {
         when(comercioRepository.findById("no-existe")).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.obtenerComercioPorId("no-existe"))
-                .isInstanceOf(ComercioNoEncontradoException.class);
+                .isInstanceOf(ComercioNoEncontradoException.class)
+                .hasMessageContaining("no-existe");
     }
 
     @Test
@@ -374,7 +376,8 @@ class ComercioServiceImplTest {
                 "Nuevo nombre", null, null, null, null, null, null, null, null);
 
         assertThatThrownBy(() -> service.actualizarComercioParcial("no-existe", request))
-                .isInstanceOf(ComercioNoEncontradoException.class);
+                .isInstanceOf(ComercioNoEncontradoException.class)
+                .hasMessageContaining("no-existe");
     }
 
     @Test
@@ -414,7 +417,8 @@ class ComercioServiceImplTest {
 
         assertThatThrownBy(() -> service.eliminarComercio(
                 "no-existe", new EliminarComercioRequest("motivo"), "admin-1", "Admin Uno"))
-                .isInstanceOf(ComercioNoEncontradoException.class);
+                .isInstanceOf(ComercioNoEncontradoException.class)
+                .hasMessageContaining("no-existe");
 
         verify(comercioEliminadoRepository, never()).save(any());
     }

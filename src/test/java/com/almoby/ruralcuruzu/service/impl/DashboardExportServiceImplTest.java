@@ -6,7 +6,9 @@ import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
 import java.time.Year;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
@@ -14,6 +16,9 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+
+import com.lowagie.text.pdf.PdfReader;
+import com.lowagie.text.pdf.parser.PdfTextExtractor;
 
 import com.almoby.ruralcuruzu.dto.response.BeneficioMasUtilizadoResponse;
 import com.almoby.ruralcuruzu.dto.response.CobranzaMensualResponse;
@@ -69,6 +74,27 @@ class DashboardExportServiceImplTest {
         verify(dashboardService).obtenerEstadoSocios(null, null);
         verify(dashboardService).obtenerUsoBeneficiosPorComercio();
         verify(dashboardService).obtenerBeneficiosMasUtilizados();
+    }
+
+    @Test
+    void generarReportePdf_encabezado_muestraFechaDeHoyConFormatoDdMmYyyy() throws java.io.IOException {
+        // Approval test (characterization) for D1: pins the current dd/MM/yyyy
+        // header date format before it moves to FechaUtil.FORMATO_FECHA_CORTA.
+        int anioActual = Year.now().getValue();
+
+        when(dashboardService.obtenerIndicadoresPrincipales()).thenReturn(indicadores());
+        when(dashboardService.obtenerCobranzaMensual(anioActual)).thenReturn(List.of());
+        when(dashboardService.obtenerEstadoSocios(null, null)).thenReturn(new EstadoSociosResponse(0, 0, 0, 0));
+        when(dashboardService.obtenerUsoBeneficiosPorComercio()).thenReturn(List.of());
+        when(dashboardService.obtenerBeneficiosMasUtilizados()).thenReturn(List.of());
+
+        byte[] pdf = service.generarReportePdf();
+
+        String fechaEsperada = LocalDate.now().format(DateTimeFormatter.ofPattern("dd/MM/yyyy"));
+        try (PdfReader reader = new PdfReader(pdf)) {
+            String textoPagina1 = new PdfTextExtractor(reader).getTextFromPage(1);
+            assertThat(textoPagina1).contains("Generado el " + fechaEsperada);
+        }
     }
 
     @Test

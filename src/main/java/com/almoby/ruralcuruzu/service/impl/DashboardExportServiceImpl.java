@@ -6,7 +6,6 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.Year;
-import java.time.format.DateTimeFormatter;
 import java.util.List;
 
 import org.springframework.stereotype.Service;
@@ -18,6 +17,7 @@ import com.almoby.ruralcuruzu.dto.response.IndicadoresPrincipalesResponse;
 import com.almoby.ruralcuruzu.dto.response.UsoBeneficioPorComercioResponse;
 import com.almoby.ruralcuruzu.service.DashboardExportService;
 import com.almoby.ruralcuruzu.service.DashboardService;
+import com.almoby.ruralcuruzu.util.FechaUtil;
 import com.lowagie.text.Document;
 import com.lowagie.text.DocumentException;
 import com.lowagie.text.Element;
@@ -80,7 +80,7 @@ public class DashboardExportServiceImpl implements DashboardExportService {
         titulo.setSpacingAfter(2);
         documento.add(titulo);
 
-        String fecha = LocalDate.now().format(DateTimeFormatter.ofPattern("dd/MM/yyyy"));
+        String fecha = LocalDate.now().format(FechaUtil.FORMATO_FECHA_CORTA);
         Paragraph subtitulo = new Paragraph("Generado el " + fecha, FUENTE_SUBTITULO);
         subtitulo.setSpacingAfter(16);
         documento.add(subtitulo);

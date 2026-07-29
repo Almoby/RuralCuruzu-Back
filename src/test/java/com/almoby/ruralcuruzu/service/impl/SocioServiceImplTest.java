@@ -352,7 +352,8 @@ class SocioServiceImplTest {
         when(socioRepository.findById("no-existe")).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.obtenerSocioPorId("no-existe"))
-                .isInstanceOf(SocioNoEncontradoException.class);
+                .isInstanceOf(SocioNoEncontradoException.class)
+                .hasMessageContaining("no-existe");
     }
 
     @Test
@@ -402,7 +403,8 @@ class SocioServiceImplTest {
         when(socioRepository.findById("no-existe")).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.obtenerMiQr("no-existe"))
-                .isInstanceOf(SocioNoEncontradoException.class);
+                .isInstanceOf(SocioNoEncontradoException.class)
+                .hasMessageContaining("no-existe");
     }
 
     private void doAnswerAsignarIdSocio() {

@@ -25,4 +25,11 @@ public interface CuotaRepository extends MongoRepository<Cuota, String> {
 
     /** Usado por el job diario de recordatorios (documento 29.2): 5/1/0 días antes del vencimiento. */
     List<Cuota> findByEstadoAndFechaVencimiento(EstadoCuota estado, LocalDate fecha);
+
+    /**
+     * Usado por generarCuotas (D-5) para preloadear en un solo query qué socios
+     * ya tienen cuota generada en el período, en vez de un existsBySocioIdAndPeriodo
+     * por socio dentro del loop.
+     */
+    List<Cuota> findByPeriodo(String periodo);
 }

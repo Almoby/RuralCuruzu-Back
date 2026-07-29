@@ -39,6 +39,7 @@ import com.almoby.ruralcuruzu.repository.UsuarioRepository;
 import com.almoby.ruralcuruzu.service.ComercioService;
 import com.almoby.ruralcuruzu.service.CuentaAccesoService;
 import com.almoby.ruralcuruzu.service.EmailService;
+import com.almoby.ruralcuruzu.util.RepositorioUtil;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -320,8 +321,7 @@ public class ComercioServiceImpl implements ComercioService {
     }
 
     private Comercio buscarOFallar(String id) {
-        return comercioRepository.findById(id)
-                .orElseThrow(() -> new ComercioNoEncontradoException(id));
+        return RepositorioUtil.buscarOFallar(comercioRepository::findById, id, ComercioNoEncontradoException::new);
     }
 
     private void validarNoDuplicado(String cuit, String correo) {

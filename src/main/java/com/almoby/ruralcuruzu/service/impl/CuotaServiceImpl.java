@@ -16,6 +16,7 @@ import java.util.Set;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
+import org.springframework.dao.IncorrectResultSizeDataAccessException;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
@@ -39,6 +40,7 @@ import com.almoby.ruralcuruzu.dto.response.PagoResponse;
 import com.almoby.ruralcuruzu.dto.response.RegistrarPagoResponse;
 import com.almoby.ruralcuruzu.dto.response.ResumenCuotasResponse;
 import com.almoby.ruralcuruzu.dto.response.RevisarPagoInformadoResponse;
+import com.almoby.ruralcuruzu.enums.CategoriaSocio;
 import com.almoby.ruralcuruzu.enums.EstadoCuota;
 import com.almoby.ruralcuruzu.enums.EstadoPago;
 import com.almoby.ruralcuruzu.enums.EstadoSocio;
@@ -180,8 +182,11 @@ public class CuotaServiceImpl implements CuotaService {
     }
 
     private void enviarRecordatorioPorDiasRestantes(LocalDate fechaVencimiento, int diasRestantes) {
-        for (Cuota cuota : cuotaRepository.findByEstadoAndFechaVencimiento(EstadoCuota.PENDIENTE, fechaVencimiento)) {
-            Socio socio = socioRepository.findById(cuota.getSocioId()).orElse(null);
+        List<Cuota> cuotas = cuotaRepository.findByEstadoAndFechaVencimiento(EstadoCuota.PENDIENTE, fechaVencimiento);
+        Map<String, Socio> sociosPorId = buscarSociosPorId(cuotas.stream().map(Cuota::getSocioId).toList());
+
+        for (Cuota cuota : cuotas) {
+            Socio socio = sociosPorId.get(cuota.getSocioId());
             if (socio != null && socio.obtenerEmail() != null) {
                 emailService.enviarCorreoCuotaProximaAVencer(socio.obtenerEmail(), socio.nombreParaMostrar(),
                         cuota.getPeriodo(), cuota.getImporte(), cuota.getFechaVencimiento(), diasRestantes);
@@ -191,16 +196,44 @@ public class CuotaServiceImpl implements CuotaService {
 
     /** Avisa el primer día que una cuota queda VENCIDA, y después cada 7 días mientras lo siga estando. */
     private void enviarAvisosDeDeuda(LocalDate hoy) {
-        for (Cuota cuota : cuotaRepository.findByEstado(EstadoCuota.VENCIDA)) {
-            long diasVencida = ChronoUnit.DAYS.between(cuota.getFechaVencimiento(), hoy);
-            if (diasVencida == 1 || (diasVencida > 0 && diasVencida % 7 == 0)) {
-                Socio socio = socioRepository.findById(cuota.getSocioId()).orElse(null);
+        List<Cuota> vencidas = cuotaRepository.findByEstado(EstadoCuota.VENCIDA);
+        List<String> idsQueAvisan = vencidas.stream()
+                .filter(cuota -> avisaHoy(cuota, hoy))
+                .map(Cuota::getSocioId)
+                .toList();
+        Map<String, Socio> sociosPorId = buscarSociosPorId(idsQueAvisan);
+
+        for (Cuota cuota : vencidas) {
+            if (avisaHoy(cuota, hoy)) {
+                Socio socio = sociosPorId.get(cuota.getSocioId());
                 if (socio != null && socio.obtenerEmail() != null) {
                     emailService.enviarCorreoCuotaVencida(socio.obtenerEmail(), socio.nombreParaMostrar(),
                             cuota.getPeriodo(), cuota.getImporte(), cuota.getFechaVencimiento());
                 }
             }
         }
+    }
+
+    private boolean avisaHoy(Cuota cuota, LocalDate hoy) {
+        long diasVencida = ChronoUnit.DAYS.between(cuota.getFechaVencimiento(), hoy);
+        return diasVencida == 1 || (diasVencida > 0 && diasVencida % 7 == 0);
+    }
+
+    /**
+     * D-6: reemplaza un findById por cuota por un único findAllById con los ids
+     * distintos de la lista recibida, preservando el mismo comportamiento de
+     * "ausente -> null -> se omite" que tenía el findById(...).orElse(null) original.
+     * Sin llamada a Mongo si no hay ids (evita un query constante innecesario).
+     */
+    private Map<String, Socio> buscarSociosPorId(List<String> socioIds) {
+        List<String> idsUnicos = socioIds.stream().distinct().toList();
+        if (idsUnicos.isEmpty()) {
+            return Map.of();
+        }
+
+        Map<String, Socio> resultado = new HashMap<>();
+        socioRepository.findAllById(idsUnicos).forEach(socio -> resultado.put(socio.getId(), socio));
+        return resultado;
     }
 
     @Override
@@ -210,15 +243,33 @@ public class CuotaServiceImpl implements CuotaService {
         boolean esManual = adminId != null;
 
         List<Socio> sociosActivos = socioRepository.findByEstado(EstadoSocio.ACTIVO);
+        // D-5: un único findByPeriodo() reemplaza el existsBySocioIdAndPeriodo por-socio
+        // dentro del loop (R-2 aceptado: el chequeo pasa de "por-socio" a "toda la
+        // corrida", ver Accepted Risks del design).
+        Set<String> sociosConCuota = cuotaRepository.findByPeriodo(periodoStr).stream()
+                .map(Cuota::getSocioId)
+                .collect(Collectors.toSet());
+        // D-4: preload de reglas agrupadas por categoría (groupingBy, no toMap): el
+        // chequeo de categoriaAplicable duplicada solo se evalúa (lanza
+        // IncorrectResultSizeDataAccessException) para categorías que efectivamente
+        // necesitan una cuota, igual que el findByCategoriaAplicable por-socio original.
+        Map<CategoriaSocio, List<ReglaCuota>> reglasPorCategoria = reglaCuotaRepository.findAll().stream()
+                .collect(Collectors.groupingBy(ReglaCuota::getCategoriaAplicable));
+
         int generadas = 0;
         int omitidos = 0;
 
         for (Socio socio : sociosActivos) {
-            if (cuotaRepository.existsBySocioIdAndPeriodo(socio.getId(), periodoStr)) {
+            if (sociosConCuota.contains(socio.getId())) {
                 continue;
             }
 
-            Optional<ReglaCuota> regla = reglaCuotaRepository.findByCategoriaAplicable(socio.getCategoria());
+            List<ReglaCuota> candidatas = reglasPorCategoria.getOrDefault(socio.getCategoria(), List.of());
+            if (candidatas.size() > 1) {
+                throw new IncorrectResultSizeDataAccessException(
+                        "Hay más de una ReglaCuota para categoria=" + socio.getCategoria(), 1);
+            }
+            Optional<ReglaCuota> regla = candidatas.stream().findFirst();
 
             if (regla.isEmpty()) {
                 log.warn("No hay una regla de cuota configurada para categoria={}: se omite socio id={}",

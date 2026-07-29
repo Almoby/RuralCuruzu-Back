@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -19,13 +20,27 @@ import java.util.List;
 import java.util.Optional;
 
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.dao.IncorrectResultSizeDataAccessException;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.TestPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.web.multipart.MultipartFile;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.mongodb.MongoDBContainer;
+import org.testcontainers.utility.DockerImageName;
 
 import com.almoby.ruralcuruzu.domain.Cuota;
 import com.almoby.ruralcuruzu.domain.DatosPersonaFisica;
@@ -122,8 +137,13 @@ class CuotaServiceImplTest {
     }
 
     private Socio socioActivo(String id, String numeroSocio, CategoriaSocio categoria) {
+        return socioActivo(id, numeroSocio, categoria, "juan@example.com");
+    }
+
+    /** Igual que {@link #socioActivo(String, String, CategoriaSocio)}, pero con email explícito (puede ser null). */
+    private Socio socioActivo(String id, String numeroSocio, CategoriaSocio categoria, String email) {
         DatosPersonaFisica datos = new DatosPersonaFisica(
-                "Lopez, Juan", "12345678", null, null, null, null, null, "juan@example.com", null, null);
+                "Lopez, Juan", "12345678", null, null, null, null, null, email, null, null);
         return Socio.builder()
                 .id(id)
                 .numeroSocio(numeroSocio)
@@ -173,9 +193,9 @@ class CuotaServiceImplTest {
     void generarCuotas_conSocioActivo_generaCuotaPendienteConLaRegladeSuCategoria() {
         Socio socio = socioActivo("socio-1", "SOC-000001", CategoriaSocio.ACTIVO);
         when(socioRepository.findByEstado(EstadoSocio.ACTIVO)).thenReturn(List.of(socio));
-        when(cuotaRepository.existsBySocioIdAndPeriodo(eq("socio-1"), anyString())).thenReturn(false);
-        when(reglaCuotaRepository.findByCategoriaAplicable(CategoriaSocio.ACTIVO))
-                .thenReturn(Optional.of(reglaCuota(CategoriaSocio.ACTIVO, "Cuota de socio activo", "15000.00", 10)));
+        when(cuotaRepository.findByPeriodo(anyString())).thenReturn(List.of());
+        when(reglaCuotaRepository.findAll())
+                .thenReturn(List.of(reglaCuota(CategoriaSocio.ACTIVO, "Cuota de socio activo", "15000.00", 10)));
         when(ejecucionRepository.save(any(EjecucionGeneracionCuotas.class))).thenAnswer(inv -> inv.getArgument(0));
 
         GeneracionCuotasResponse response = service.generarCuotas("2026-07", null, null);
@@ -189,6 +209,11 @@ class CuotaServiceImplTest {
         assertThat(cuotaCaptor.getValue().getImporte()).isEqualByComparingTo("15000.00");
         assertThat(cuotaCaptor.getValue().getTipoCuotaNombre()).isEqualTo("Cuota de socio activo");
         verify(emailService).enviarCorreoCuotaGenerada(eq("juan@example.com"), anyString(), eq("2026-07"), any(), any());
+        // D-4/D-5: un único findAll()/findByPeriodo() por corrida, nunca por-socio.
+        verify(reglaCuotaRepository, times(1)).findAll();
+        verify(reglaCuotaRepository, never()).findByCategoriaAplicable(any());
+        verify(cuotaRepository, times(1)).findByPeriodo("2026-07");
+        verify(cuotaRepository, never()).existsBySocioIdAndPeriodo(anyString(), anyString());
     }
 
     @Test
@@ -205,8 +230,8 @@ class CuotaServiceImplTest {
     void generarCuotas_conCategoriaSinReglaCargada_loOmiteYNoRompeLaCorrida() {
         Socio socio = socioActivo("socio-1", "SOC-000001", CategoriaSocio.ADHERENTE);
         when(socioRepository.findByEstado(EstadoSocio.ACTIVO)).thenReturn(List.of(socio));
-        when(cuotaRepository.existsBySocioIdAndPeriodo(eq("socio-1"), anyString())).thenReturn(false);
-        when(reglaCuotaRepository.findByCategoriaAplicable(CategoriaSocio.ADHERENTE)).thenReturn(Optional.empty());
+        when(cuotaRepository.findByPeriodo(anyString())).thenReturn(List.of());
+        when(reglaCuotaRepository.findAll()).thenReturn(List.of());
         when(ejecucionRepository.save(any(EjecucionGeneracionCuotas.class))).thenAnswer(inv -> inv.getArgument(0));
 
         GeneracionCuotasResponse response = service.generarCuotas("2026-07", null, null);
@@ -220,13 +245,14 @@ class CuotaServiceImplTest {
     void generarCuotas_conSocioQueYaTieneCuotaEnElPeriodo_noLaDuplica() {
         Socio socio = socioActivo("socio-1", "SOC-000001", CategoriaSocio.ACTIVO);
         when(socioRepository.findByEstado(EstadoSocio.ACTIVO)).thenReturn(List.of(socio));
-        when(cuotaRepository.existsBySocioIdAndPeriodo("socio-1", "2026-07")).thenReturn(true);
+        when(cuotaRepository.findByPeriodo("2026-07")).thenReturn(List.of(cuotaPendiente("cuota-existente", "socio-1")));
         when(ejecucionRepository.save(any(EjecucionGeneracionCuotas.class))).thenAnswer(inv -> inv.getArgument(0));
 
         GeneracionCuotasResponse response = service.generarCuotas("2026-07", null, null);
 
         assertThat(response.cantidadCuotasGeneradas()).isEqualTo(0);
         verify(cuotaRepository, never()).save(any());
+        verify(cuotaRepository, never()).existsBySocioIdAndPeriodo(anyString(), anyString());
     }
 
     // ---------- listarEjecuciones ----------
@@ -868,7 +894,7 @@ class CuotaServiceImplTest {
     @Test
     void enviarRecordatoriosDeCuotas_avisaACincoYUnDiaYElDiaDeVencimiento() {
         Socio socio = socioActivo("socio-1", "SOC-000001", CategoriaSocio.ACTIVO);
-        when(socioRepository.findById("socio-1")).thenReturn(Optional.of(socio));
+        when(socioRepository.findAllById(anyList())).thenReturn(List.of(socio));
 
         Cuota aCincoDias = cuotaPendiente("cuota-5", "socio-1");
         Cuota aUnDia = cuotaPendiente("cuota-1", "socio-1");
@@ -890,12 +916,50 @@ class CuotaServiceImplTest {
                 eq("juan@example.com"), anyString(), anyString(), any(), any(), eq(1));
         verify(emailService).enviarCorreoCuotaProximaAVencer(
                 eq("juan@example.com"), anyString(), anyString(), any(), any(), eq(0));
+        // D-6: un findAllById por cada día con cuotas (3 buckets no vacíos), nunca findById por cuota.
+        verify(socioRepository, times(3)).findAllById(anyList());
+        verify(socioRepository, never()).findById(anyString());
+    }
+
+    @Test
+    void enviarRecordatorioPorDiasRestantes_variasCuotasEnElMismoDia_respetaOrdenOriginalDeLaLista() {
+        // Caracterización previa a D-6 (findAllById + Map): confirma que el orden de
+        // envío sigue el orden de la lista devuelta por el repositorio (no un orden
+        // alfabético/por id), para poder detectar si el futuro Map rompe ese orden.
+        Socio socioB = socioActivo("socio-b", "SOC-000002", CategoriaSocio.ACTIVO, "b@example.com");
+        Socio socioA = socioActivo("socio-a", "SOC-000001", CategoriaSocio.ACTIVO, "a@example.com");
+        when(socioRepository.findAllById(anyList())).thenReturn(List.of(socioB, socioA));
+
+        Cuota cuotaB = cuotaPendiente("cuota-b", "socio-b");
+        Cuota cuotaA = cuotaPendiente("cuota-a", "socio-a");
+        LocalDate hoyFecha = LocalDate.now();
+        // Orden deliberado: socio-b antes que socio-a en la lista devuelta.
+        when(cuotaRepository.findByEstadoAndFechaVencimiento(EstadoCuota.PENDIENTE, hoyFecha.plusDays(5)))
+                .thenReturn(List.of(cuotaB, cuotaA));
+        when(cuotaRepository.findByEstadoAndFechaVencimiento(EstadoCuota.PENDIENTE, hoyFecha.plusDays(1)))
+                .thenReturn(List.of());
+        when(cuotaRepository.findByEstadoAndFechaVencimiento(EstadoCuota.PENDIENTE, hoyFecha))
+                .thenReturn(List.of());
+        when(cuotaRepository.findByEstado(EstadoCuota.VENCIDA)).thenReturn(List.of());
+
+        service.enviarRecordatoriosDeCuotas();
+
+        InOrder orden = inOrder(emailService);
+        orden.verify(emailService).enviarCorreoCuotaProximaAVencer(
+                eq("b@example.com"), anyString(), anyString(), any(), any(), eq(5));
+        orden.verify(emailService).enviarCorreoCuotaProximaAVencer(
+                eq("a@example.com"), anyString(), anyString(), any(), any(), eq(5));
+        verify(emailService, times(2)).enviarCorreoCuotaProximaAVencer(
+                anyString(), anyString(), anyString(), any(), any(), eq(5));
+        // D-6: un único findAllById para el bucket de día 5 (2 cuotas, 1 query), buckets vacíos no llaman nada.
+        verify(socioRepository, times(1)).findAllById(anyList());
+        verify(socioRepository, never()).findById(anyString());
     }
 
     @Test
     void enviarRecordatoriosDeCuotas_avisaDeDeudaElPrimerDiaVencidaYCadaSieteDiasDespues() {
         Socio socio = socioActivo("socio-1", "SOC-000001", CategoriaSocio.ACTIVO);
-        when(socioRepository.findById("socio-1")).thenReturn(Optional.of(socio));
+        when(socioRepository.findAllById(anyList())).thenReturn(List.of(socio));
         when(cuotaRepository.findByEstadoAndFechaVencimiento(eq(EstadoCuota.PENDIENTE), any(LocalDate.class)))
                 .thenReturn(List.of());
 
@@ -907,18 +971,55 @@ class CuotaServiceImplTest {
         vencidaHaceSieteDias.setEstado(EstadoCuota.VENCIDA);
         vencidaHaceSieteDias.setFechaVencimiento(LocalDate.now().minusDays(7));
 
+        Cuota vencidaHaceCatorceDias = cuotaPendiente("cuota-4", "socio-1");
+        vencidaHaceCatorceDias.setEstado(EstadoCuota.VENCIDA);
+        vencidaHaceCatorceDias.setFechaVencimiento(LocalDate.now().minusDays(14));
+
         Cuota vencidaHaceTresDias = cuotaPendiente("cuota-3", "socio-1");
         vencidaHaceTresDias.setEstado(EstadoCuota.VENCIDA);
         vencidaHaceTresDias.setFechaVencimiento(LocalDate.now().minusDays(3));
 
         when(cuotaRepository.findByEstado(EstadoCuota.VENCIDA))
-                .thenReturn(List.of(vencidaAyer, vencidaHaceSieteDias, vencidaHaceTresDias));
+                .thenReturn(List.of(vencidaAyer, vencidaHaceSieteDias, vencidaHaceCatorceDias, vencidaHaceTresDias));
 
         service.enviarRecordatoriosDeCuotas();
 
-        // Día 1 y día 7 sí avisan; día 3 (ni el primer día ni múltiplo de 7) no.
-        verify(emailService, times(2)).enviarCorreoCuotaVencida(
+        // Día 1, día 7 y día 14 sí avisan; día 3 (ni el primer día ni múltiplo de 7) no.
+        verify(emailService, times(3)).enviarCorreoCuotaVencida(
                 eq("juan@example.com"), anyString(), anyString(), any(), any());
+        // D-6: un único findAllById con el id deduplicado (mismo socio en las 3 cuotas que avisan).
+        verify(socioRepository, times(1)).findAllById(anyList());
+        verify(socioRepository, never()).findById(anyString());
+    }
+
+    @Test
+    void enviarAvisosDeDeuda_variasCuotasVencidas_respetaOrdenOriginalDeLaLista() {
+        // Caracterización previa a D-6: mismo objetivo que el test análogo de
+        // enviarRecordatorioPorDiasRestantes, pero para el loop de avisos de deuda.
+        Socio socioB = socioActivo("socio-b", "SOC-000002", CategoriaSocio.ACTIVO, "b@example.com");
+        Socio socioA = socioActivo("socio-a", "SOC-000001", CategoriaSocio.ACTIVO, "a@example.com");
+        when(socioRepository.findAllById(anyList())).thenReturn(List.of(socioB, socioA));
+        when(cuotaRepository.findByEstadoAndFechaVencimiento(eq(EstadoCuota.PENDIENTE), any(LocalDate.class)))
+                .thenReturn(List.of());
+
+        Cuota vencidaB = cuotaPendiente("cuota-b", "socio-b");
+        vencidaB.setEstado(EstadoCuota.VENCIDA);
+        vencidaB.setFechaVencimiento(LocalDate.now().minusDays(1));
+        Cuota vencidaA = cuotaPendiente("cuota-a", "socio-a");
+        vencidaA.setEstado(EstadoCuota.VENCIDA);
+        vencidaA.setFechaVencimiento(LocalDate.now().minusDays(1));
+
+        // Orden deliberado: socio-b antes que socio-a en la lista devuelta.
+        when(cuotaRepository.findByEstado(EstadoCuota.VENCIDA)).thenReturn(List.of(vencidaB, vencidaA));
+
+        service.enviarRecordatoriosDeCuotas();
+
+        InOrder orden = inOrder(emailService);
+        orden.verify(emailService).enviarCorreoCuotaVencida(eq("b@example.com"), anyString(), anyString(), any(), any());
+        orden.verify(emailService).enviarCorreoCuotaVencida(eq("a@example.com"), anyString(), anyString(), any(), any());
+        // D-6: un único findAllById para ambas cuotas vencidas del mismo día.
+        verify(socioRepository, times(1)).findAllById(anyList());
+        verify(socioRepository, never()).findById(anyString());
     }
 
     // ---------- resumen ----------
@@ -957,5 +1058,195 @@ class CuotaServiceImplTest {
         assertThat(response.cantidadPendientes()).isEqualTo(3); // pendiente + vencida + en_revision
         assertThat(response.cantidadAprobadas()).isEqualTo(2);
         assertThat(response.cantidadRechazadas()).isEqualTo(1);
+    }
+
+    // ---------- generarCuotas: Mongo real (Testcontainers) ----------
+
+    /**
+     * Suite aparte con Mongo real: un mock de Mockito no puede probar de forma
+     * confiable (a) que Spring Data efectivamente lanza
+     * IncorrectResultSizeDataAccessException cuando hay dos ReglaCuota para la
+     * misma categoría (comportamiento del derived query, no de nuestro código),
+     * ni (b) una foto record-level de lo que generarCuotas persiste con una
+     * semilla fija, para comparar antes/después del refactor D-4/D-5 (fase 4).
+     *
+     * No reutiliza com.almoby.ruralcuruzu.TestcontainersConfiguration (es
+     * package-private en otro paquete): arranca su propio MongoDBContainer y
+     * apunta app.mongodb.uri directo a él vía @DynamicPropertySource, el mismo
+     * punto de extensión que ya usa MongoConfig — self-contained acá para no
+     * tocar ningún archivo fuera del alcance de este cambio.
+     */
+    @Nested
+    @Testcontainers
+    @TestPropertySource(properties = {
+            "jwt.secret=test-only-secret-do-not-use-in-production-1234567890"
+    })
+    @SpringBootTest
+    class GenerarCuotasConMongoRealTest {
+
+        @Container
+        private static final MongoDBContainer MONGO_DB_CONTAINER = new MongoDBContainer(DockerImageName.parse("mongo:latest"));
+
+        @DynamicPropertySource
+        static void mongoProperties(DynamicPropertyRegistry registry) {
+            registry.add("app.mongodb.uri", () -> MONGO_DB_CONTAINER.getReplicaSetUrl("test"));
+        }
+
+        @Autowired
+        private CuotaServiceImpl cuotaServiceReal;
+        // Spies (no mocks/stubs) para verificar cantidad de invocaciones sobre Mongo
+        // real (D-4/D-5: findAll()/findByPeriodo() una vez, no por-socio) sin perder
+        // el comportamiento real del repositorio.
+        @MockitoSpyBean
+        private CuotaRepository cuotaRepositoryReal;
+        @Autowired
+        private SocioRepository socioRepositoryReal;
+        @MockitoSpyBean
+        private ReglaCuotaRepository reglaCuotaRepositoryReal;
+        @Autowired
+        private EjecucionGeneracionCuotasRepository ejecucionRepositoryReal;
+
+        @MockitoBean
+        private EmailService emailServiceReal;
+
+        @BeforeEach
+        void limpiarColecciones() {
+            cuotaRepositoryReal.deleteAll();
+            socioRepositoryReal.deleteAll();
+            reglaCuotaRepositoryReal.deleteAll();
+            ejecucionRepositoryReal.deleteAll();
+        }
+
+        private ReglaCuota reglaCuotaReal(CategoriaSocio categoria, String nombre, String importe, int diaVencimiento) {
+            return ReglaCuota.builder()
+                    .categoriaAplicable(categoria)
+                    .nombre(nombre)
+                    .importe(new BigDecimal(importe))
+                    .diaVencimiento(diaVencimiento)
+                    .build();
+        }
+
+        private Socio socioActivoReal(String numeroSocio, CategoriaSocio categoria, String email) {
+            DatosPersonaFisica datos = new DatosPersonaFisica(
+                    "Lopez, Juan", "12345678", null, null, null, null, null, email, null, null);
+            return Socio.builder()
+                    .numeroSocio(numeroSocio)
+                    .categoria(categoria)
+                    .tipoPersona(TipoPersona.FISICA)
+                    .datosPersonaFisica(datos)
+                    .estado(EstadoSocio.ACTIVO)
+                    .build();
+        }
+
+        @Test
+        void generarCuotas_conDosReglasParaLaMismaCategoriaYUnSocioDeEsaCategoria_lanzaIncorrectResultSize() {
+            reglaCuotaRepositoryReal.save(reglaCuotaReal(CategoriaSocio.ACTIVO, "Regla A", "10000.00", 10));
+            reglaCuotaRepositoryReal.save(reglaCuotaReal(CategoriaSocio.ACTIVO, "Regla B", "12000.00", 15));
+            socioRepositoryReal.save(socioActivoReal("SOC-000001", CategoriaSocio.ACTIVO, "socio@example.com"));
+
+            assertThatThrownBy(() -> cuotaServiceReal.generarCuotas("2026-07", null, null))
+                    .isInstanceOf(IncorrectResultSizeDataAccessException.class);
+
+            // D-4: el preload es un único findAll(), nunca findByCategoriaAplicable por socio.
+            verify(reglaCuotaRepositoryReal, times(1)).findAll();
+            verify(reglaCuotaRepositoryReal, never()).findByCategoriaAplicable(any());
+        }
+
+        @Test
+        void generarCuotas_conDosReglasDuplicadasPeroSinSocioDeEsaCategoria_noLanzaExcepcion() {
+            reglaCuotaRepositoryReal.save(reglaCuotaReal(CategoriaSocio.ACTIVO, "Regla A", "10000.00", 10));
+            reglaCuotaRepositoryReal.save(reglaCuotaReal(CategoriaSocio.ACTIVO, "Regla B", "12000.00", 15));
+            reglaCuotaRepositoryReal.save(reglaCuotaReal(CategoriaSocio.ADHERENTE, "Regla C", "5000.00", 10));
+            socioRepositoryReal.save(socioActivoReal("SOC-000001", CategoriaSocio.ADHERENTE, "socio@example.com"));
+
+            GeneracionCuotasResponse response = cuotaServiceReal.generarCuotas("2026-07", null, null);
+
+            assertThat(response.cantidadCuotasGeneradas()).isEqualTo(1);
+            assertThat(response.cantidadSociosOmitidos()).isEqualTo(0);
+            verify(reglaCuotaRepositoryReal, times(1)).findAll();
+            verify(reglaCuotaRepositoryReal, never()).findByCategoriaAplicable(any());
+        }
+
+        /**
+         * Foto record-level con semilla fija: socio1 (ACTIVO, con email) y socio5
+         * (ACTIVO, con email) reciben cuota + correo; socio2 (ADHERENTE, sin regla)
+         * se omite; socio3 (ACTIVO) ya tenía cuota del período, no se duplica;
+         * socio4 (ACTIVO, sin email) recibe cuota pero ningún correo. Este mismo
+         * test corre sin cambios antes (fase 1) y después (fase 5) del refactor
+         * D-4/D-5: si sigue pasando, el comportamiento se preservó byte a byte
+         * (campos volátiles enmascarados vía rango de tiempo, no valor exacto).
+         */
+        @Test
+        void generarCuotas_conSemillaFija_generaLasCuotasEsperadasYRespetaOrdenDeEnvioDeCorreos() {
+            reglaCuotaRepositoryReal.save(reglaCuotaReal(CategoriaSocio.ACTIVO, "Cuota de socio activo", "15000.00", 10));
+
+            Socio socio1 = socioRepositoryReal.save(socioActivoReal("SOC-000001", CategoriaSocio.ACTIVO, "socio1@example.com"));
+            Socio socio2 = socioRepositoryReal.save(socioActivoReal("SOC-000002", CategoriaSocio.ADHERENTE, "socio2@example.com"));
+            Socio socio3 = socioRepositoryReal.save(socioActivoReal("SOC-000003", CategoriaSocio.ACTIVO, "socio3@example.com"));
+            Socio socio4 = socioRepositoryReal.save(socioActivoReal("SOC-000004", CategoriaSocio.ACTIVO, null));
+            Socio socio5 = socioRepositoryReal.save(socioActivoReal("SOC-000005", CategoriaSocio.ACTIVO, "socio5@example.com"));
+
+            Cuota cuotaPreexistenteSocio3 = cuotaRepositoryReal.save(Cuota.builder()
+                    .socioId(socio3.getId())
+                    .socioNumeroSocio(socio3.getNumeroSocio())
+                    .socioNombre(socio3.nombreParaMostrar())
+                    .tipoCuotaNombre("Cuota de socio activo")
+                    .categoria(CategoriaSocio.ACTIVO)
+                    .periodo("2026-07")
+                    .importe(new BigDecimal("15000.00"))
+                    .fechaVencimiento(LocalDate.of(2026, 7, 10))
+                    .estado(EstadoCuota.PENDIENTE)
+                    .fechaGeneracion(Instant.now())
+                    .fechaActualizacion(Instant.now())
+                    .build());
+
+            Instant antes = Instant.now();
+            GeneracionCuotasResponse response = cuotaServiceReal.generarCuotas("2026-07", null, null);
+            Instant despues = Instant.now();
+
+            assertThat(response.cantidadSociosActivos()).isEqualTo(5);
+            assertThat(response.cantidadCuotasGeneradas()).isEqualTo(3);
+            assertThat(response.cantidadSociosOmitidos()).isEqualTo(1);
+            assertThat(response.origen()).isEqualTo(OrigenEjecucionCuotas.AUTOMATICA);
+
+            // D-4/D-5: un único findAll() de reglas y un único findByPeriodo() de cuotas
+            // por corrida, nunca un query por-socio dentro del loop.
+            verify(reglaCuotaRepositoryReal, times(1)).findAll();
+            verify(reglaCuotaRepositoryReal, never()).findByCategoriaAplicable(any());
+            verify(cuotaRepositoryReal, times(1)).findByPeriodo("2026-07");
+            verify(cuotaRepositoryReal, never()).existsBySocioIdAndPeriodo(anyString(), anyString());
+
+            Cuota cuotaSocio1 = cuotaRepositoryReal.findBySocioIdAndPeriodo(socio1.getId(), "2026-07").orElseThrow();
+            assertThat(cuotaSocio1.getSocioNumeroSocio()).isEqualTo("SOC-000001");
+            assertThat(cuotaSocio1.getTipoCuotaNombre()).isEqualTo("Cuota de socio activo");
+            assertThat(cuotaSocio1.getCategoria()).isEqualTo(CategoriaSocio.ACTIVO);
+            assertThat(cuotaSocio1.getImporte()).isEqualByComparingTo("15000.00");
+            assertThat(cuotaSocio1.getFechaVencimiento()).isEqualTo(LocalDate.of(2026, 7, 10));
+            assertThat(cuotaSocio1.getEstado()).isEqualTo(EstadoCuota.PENDIENTE);
+            assertThat(cuotaSocio1.getFechaGeneracion()).isBetween(antes, despues);
+            assertThat(cuotaSocio1.getFechaActualizacion()).isBetween(antes, despues);
+
+            assertThat(cuotaRepositoryReal.findBySocioIdAndPeriodo(socio2.getId(), "2026-07")).isEmpty();
+
+            List<Cuota> cuotasSocio3 = cuotaRepositoryReal.findBySocioId(socio3.getId());
+            assertThat(cuotasSocio3).hasSize(1);
+            assertThat(cuotasSocio3.get(0).getId()).isEqualTo(cuotaPreexistenteSocio3.getId());
+
+            Cuota cuotaSocio4 = cuotaRepositoryReal.findBySocioIdAndPeriodo(socio4.getId(), "2026-07").orElseThrow();
+            assertThat(cuotaSocio4.getImporte()).isEqualByComparingTo("15000.00");
+            assertThat(cuotaSocio4.getEstado()).isEqualTo(EstadoCuota.PENDIENTE);
+
+            Cuota cuotaSocio5 = cuotaRepositoryReal.findBySocioIdAndPeriodo(socio5.getId(), "2026-07").orElseThrow();
+            assertThat(cuotaSocio5.getImporte()).isEqualByComparingTo("15000.00");
+
+            // Solo socio1 y socio5 tienen email: socio4 (sin email) no dispara envío, y
+            // el orden de los dos envíos reales sigue el orden de sociosActivos.
+            InOrder orden = inOrder(emailServiceReal);
+            orden.verify(emailServiceReal).enviarCorreoCuotaGenerada(
+                    eq("socio1@example.com"), anyString(), eq("2026-07"), eq(new BigDecimal("15000.00")), eq(LocalDate.of(2026, 7, 10)));
+            orden.verify(emailServiceReal).enviarCorreoCuotaGenerada(
+                    eq("socio5@example.com"), anyString(), eq("2026-07"), eq(new BigDecimal("15000.00")), eq(LocalDate.of(2026, 7, 10)));
+            verify(emailServiceReal, times(2)).enviarCorreoCuotaGenerada(anyString(), anyString(), anyString(), any(), any());
+        }
     }
 }
