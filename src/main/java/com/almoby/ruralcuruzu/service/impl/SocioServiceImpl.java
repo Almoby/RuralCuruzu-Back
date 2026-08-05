@@ -10,9 +10,13 @@ import com.almoby.ruralcuruzu.domain.DatosPersonaFisica;
 import com.almoby.ruralcuruzu.domain.DatosPersonaJuridica;
 import com.almoby.ruralcuruzu.domain.Socio;
 import com.almoby.ruralcuruzu.domain.SolicitudSocio;
+import com.almoby.ruralcuruzu.dto.request.ActualizarSocioParcialRequest;
 import com.almoby.ruralcuruzu.dto.request.AltaManualSocioRequest;
+import com.almoby.ruralcuruzu.dto.request.CambiarEstadoSocioRequest;
+import com.almoby.ruralcuruzu.dto.response.CambiarEstadoSocioResponse;
 import com.almoby.ruralcuruzu.dto.response.EstadoQrResponse;
 import com.almoby.ruralcuruzu.dto.response.MiQrResponse;
+import com.almoby.ruralcuruzu.dto.response.SocioActualizadoResponse;
 import com.almoby.ruralcuruzu.dto.response.SocioCreadoResponse;
 import com.almoby.ruralcuruzu.dto.response.SocioResponse;
 import com.almoby.ruralcuruzu.dto.response.SocioResumenResponse;
@@ -179,6 +183,124 @@ public class SocioServiceImpl implements SocioService {
         QrTokenGenerado token = qrTokenService.generar(socio.getId());
         return new MiQrResponse(token.token(), token.expiraEn(), socio.getNumeroSocio(), socio.nombreParaMostrar(),
                 socio.getCategoria(), estadoQr.estado(), estadoQr.mensaje(), estadoQr.fechaValidez(), estadoQr.ultimoPago());
+    }
+
+    @Override
+    public CambiarEstadoSocioResponse cambiarEstadoSocio(String id, CambiarEstadoSocioRequest request) {
+        Socio socio = buscarOFallar(id);
+
+        socio.setEstado(request.nuevoEstado());
+        socio.setFechaActualizacion(Instant.now());
+        socioRepository.save(socio);
+
+        log.info("Socio id={} pasó a estado={}", id, request.nuevoEstado());
+
+        return CambiarEstadoSocioResponse.of(id, request.nuevoEstado());
+    }
+
+    @Override
+    public SocioActualizadoResponse actualizarSocioParcial(String id, ActualizarSocioParcialRequest request) {
+        Socio socio = buscarOFallar(id);
+
+        if (request.categoria() != null) {
+            socio.setCategoria(request.categoria());
+        }
+        if (esNoVacio(request.telefono())) {
+            setTelefono(socio, request.telefono());
+        }
+        if (esNoVacio(request.direccion())) {
+            setDireccion(socio, request.direccion());
+        }
+        if (esNoVacio(request.portalPisoDepartamento())) {
+            setPortalPisoDepartamento(socio, request.portalPisoDepartamento());
+        }
+        if (esNoVacio(request.nombreEstablecimiento())) {
+            setNombreEstablecimiento(socio, request.nombreEstablecimiento());
+        }
+        if (esNoVacio(request.direccionEstablecimiento())) {
+            setDireccionEstablecimiento(socio, request.direccionEstablecimiento());
+        }
+
+        boolean cambioElCorreo = false;
+        if (esNoVacio(request.correoElectronico())) {
+            String correoNuevo = request.correoElectronico().trim().toLowerCase();
+            String correoActual = socio.obtenerEmail();
+            if (correoActual == null || !correoActual.equalsIgnoreCase(correoNuevo)) {
+                if (usuarioRepository.existsByEmail(correoNuevo)) {
+                    log.warn("Edición parcial de socio id={} rechazada: correo ya registrado ({})", id, correoNuevo);
+                    throw new EmailYaRegistradoException();
+                }
+                setCorreoElectronico(socio, correoNuevo);
+                cambioElCorreo = true;
+            }
+        }
+
+        socio.setFechaActualizacion(Instant.now());
+        socioRepository.save(socio);
+
+        if (cambioElCorreo && socio.getUsuarioId() != null) {
+            String correoFinal = socio.obtenerEmail();
+            usuarioRepository.findById(socio.getUsuarioId()).ifPresent(usuario -> {
+                usuario.setEmail(correoFinal);
+                usuarioRepository.save(usuario);
+            });
+        }
+
+        log.info("Socio id={} actualizado parcialmente", id);
+
+        return SocioActualizadoResponse.of(SocioResponse.from(socio));
+    }
+
+    private boolean esNoVacio(String valor) {
+        return valor != null && !valor.isBlank();
+    }
+
+    private void setTelefono(Socio socio, String telefono) {
+        if (socio.getTipoPersona() == TipoPersona.FISICA) {
+            socio.getDatosPersonaFisica().setTelefono(telefono);
+        } else {
+            socio.getDatosPersonaJuridica().setTelefono(telefono);
+        }
+    }
+
+    private void setDireccion(Socio socio, String direccion) {
+        if (socio.getTipoPersona() == TipoPersona.FISICA) {
+            socio.getDatosPersonaFisica().setDireccion(direccion);
+        } else {
+            socio.getDatosPersonaJuridica().setDireccion(direccion);
+        }
+    }
+
+    private void setPortalPisoDepartamento(Socio socio, String portalPisoDepartamento) {
+        if (socio.getTipoPersona() == TipoPersona.FISICA) {
+            socio.getDatosPersonaFisica().setPortalPisoDepartamento(portalPisoDepartamento);
+        } else {
+            socio.getDatosPersonaJuridica().setPortalPisoDepartamento(portalPisoDepartamento);
+        }
+    }
+
+    private void setNombreEstablecimiento(Socio socio, String nombreEstablecimiento) {
+        if (socio.getTipoPersona() == TipoPersona.FISICA) {
+            socio.getDatosPersonaFisica().setNombreEstablecimiento(nombreEstablecimiento);
+        } else {
+            socio.getDatosPersonaJuridica().setNombreEstablecimiento(nombreEstablecimiento);
+        }
+    }
+
+    private void setDireccionEstablecimiento(Socio socio, String direccionEstablecimiento) {
+        if (socio.getTipoPersona() == TipoPersona.FISICA) {
+            socio.getDatosPersonaFisica().setDireccionEstablecimiento(direccionEstablecimiento);
+        } else {
+            socio.getDatosPersonaJuridica().setDireccionEstablecimiento(direccionEstablecimiento);
+        }
+    }
+
+    private void setCorreoElectronico(Socio socio, String correoElectronico) {
+        if (socio.getTipoPersona() == TipoPersona.FISICA) {
+            socio.getDatosPersonaFisica().setCorreoElectronico(correoElectronico);
+        } else {
+            socio.getDatosPersonaJuridica().setCorreoElectronico(correoElectronico);
+        }
     }
 
     private Socio buscarOFallar(String id) {

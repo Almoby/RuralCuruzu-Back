@@ -212,6 +212,13 @@ public class GlobalExceptionHandler {
         return responder(HttpStatus.NOT_FOUND, ex.getMessage(), request);
     }
 
+    @ExceptionHandler(PagoNoEncontradoException.class)
+    public ResponseEntity<ApiErrorResponse> handlePagoNoEncontrado(PagoNoEncontradoException ex,
+                                                                     HttpServletRequest request) {
+        log.warn("Pago no encontrado [{}]: {}", request.getRequestURI(), ex.getMessage());
+        return responder(HttpStatus.NOT_FOUND, ex.getMessage(), request);
+    }
+
     @ExceptionHandler(NotificacionNoEncontradaException.class)
     public ResponseEntity<ApiErrorResponse> handleNotificacionNoEncontrada(NotificacionNoEncontradaException ex,
                                                                              HttpServletRequest request) {

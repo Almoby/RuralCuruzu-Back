@@ -150,12 +150,36 @@ class EstadoQrServiceImplTest {
                 .fechaPago(Instant.parse("2026-05-08T12:00:00Z")).importe(BigDecimal.TEN).build();
 
         when(cuotaRepository.findBySocioId("socio-1")).thenReturn(List.of(abril, mayo, junio));
-        when(pagoRepository.findByCuotaIdAndEstado("cuota-mayo", EstadoPago.APROBADO))
-                .thenReturn(Optional.of(pagoMayo));
+        when(pagoRepository.findByCuotaId("cuota-mayo")).thenReturn(List.of(pagoMayo));
 
         EstadoQrResponse resultado = service.calcularEstado(socio(EstadoSocio.ACTIVO, "usuario-1"));
 
         assertThat(resultado.ultimoPago()).isEqualTo(Instant.parse("2026-05-08T12:00:00Z"));
+    }
+
+    @Test
+    void calcularEstado_conDosPagosAprobadosParaLaMismaCuota_noRompeYMuestraElMasReciente() {
+        // Regresión: dos intentos de pago en paralelo (dos links de Mercado Pago)
+        // aprobados casi al mismo tiempo pueden dejar más de un Pago APROBADO para
+        // la misma cuota (ver CuotaServiceImpl.procesarNotificacionMercadoPago). Con
+        // un findByCuotaIdAndEstado (Optional), esto tiraba
+        // IncorrectResultSizeDataAccessException con solo consultar "Mi QR".
+        when(usuarioRepository.findById("usuario-1")).thenReturn(Optional.of(usuario(EstadoUsuario.ACTIVO)));
+        Cuota mayo = cuota("cuota-mayo", "2026-05", EstadoCuota.PAGADA, LocalDate.of(2026, 5, 9));
+
+        Pago primerPago = Pago.builder().id("pago-1").cuotaId("cuota-mayo").estado(EstadoPago.APROBADO)
+                .fechaPago(Instant.parse("2026-05-08T12:00:00Z"))
+                .fechaCreacion(Instant.parse("2026-05-08T11:00:00Z")).importe(BigDecimal.TEN).build();
+        Pago segundoPago = Pago.builder().id("pago-2").cuotaId("cuota-mayo").estado(EstadoPago.APROBADO)
+                .fechaPago(Instant.parse("2026-05-08T12:05:00Z"))
+                .fechaCreacion(Instant.parse("2026-05-08T11:05:00Z")).importe(BigDecimal.TEN).build();
+
+        when(cuotaRepository.findBySocioId("socio-1")).thenReturn(List.of(mayo));
+        when(pagoRepository.findByCuotaId("cuota-mayo")).thenReturn(List.of(primerPago, segundoPago));
+
+        EstadoQrResponse resultado = service.calcularEstado(socio(EstadoSocio.ACTIVO, "usuario-1"));
+
+        assertThat(resultado.ultimoPago()).isEqualTo(Instant.parse("2026-05-08T12:05:00Z"));
     }
 
     @Test

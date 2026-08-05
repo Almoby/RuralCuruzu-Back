@@ -1,6 +1,7 @@
 package com.almoby.ruralcuruzu.dto.response;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 /**
  * Totales para las tarjetas y pestañas del panel de "Gestión de Cuotas"
@@ -16,7 +17,9 @@ public record ResumenCuotasResponse(
         long cantidadTodas,
         long cantidadPendientes,
         long cantidadAprobadas,
-        long cantidadRechazadas
+        long cantidadRechazadas,
+
+        List<CobranzaPorCategoriaResponse> cobranzaPorCategoria
 
 ) {
 }

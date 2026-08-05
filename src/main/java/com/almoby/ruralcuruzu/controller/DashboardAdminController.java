@@ -45,11 +45,13 @@ public class DashboardAdminController {
         this.dashboardExportService = dashboardExportService;
     }
 
-    @Operation(summary = "Dashboard principal (secciones 7.1 a 7.5)",
-            description = "Las 5 secciones en una sola llamada: indicadores principales, cobranza mensual (12 "
-                    + "meses del año indicado, o el año actual si no se indica), estado de socios (con filtros "
-                    + "opcionales por categoría y tipo de persona), uso de beneficios por comercio, y ranking de "
-                    + "beneficios más utilizados del mes en curso.")
+    @Operation(summary = "Dashboard principal (secciones 7.1 a 7.5, más desgloses)",
+            description = "Las 7 secciones en una sola llamada: indicadores principales, cobranza mensual (12 "
+                    + "meses del año indicado, o el año actual si no se indica) tanto total como desglosada por "
+                    + "categoría de socio (activo/adherente), estado de socios (con filtros opcionales por "
+                    + "categoría y tipo de persona), deuda acumulada por socio (para el gráfico y la lista de "
+                    + "socios con cuota vencida), uso de beneficios por comercio, y ranking de beneficios más "
+                    + "utilizados del mes en curso.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Datos obtenidos correctamente")
     })
@@ -64,9 +66,10 @@ public class DashboardAdminController {
     }
 
     @Operation(summary = "Exportar el reporte completo en PDF",
-            description = "Arma un único PDF con las 5 secciones del dashboard (indicadores principales, cobranza "
-                    + "mensual del año en curso, estado de socios, uso de beneficios por comercio y ranking de "
-                    + "beneficios más utilizados) para descargar.")
+            description = "Arma un único PDF con las 7 secciones del dashboard (indicadores principales, cobranza "
+                    + "mensual del año en curso tanto total como desglosada por categoría de socio, estado de "
+                    + "socios, deuda acumulada por socio, uso de beneficios por comercio y ranking de beneficios "
+                    + "más utilizados) para descargar.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "PDF generado correctamente")
     })

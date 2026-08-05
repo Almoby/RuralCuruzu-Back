@@ -1,6 +1,7 @@
 package com.almoby.ruralcuruzu.service.impl;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
@@ -73,6 +74,7 @@ import com.almoby.ruralcuruzu.enums.TipoPersona;
 import com.almoby.ruralcuruzu.exception.ArchivoInvalidoException;
 import com.almoby.ruralcuruzu.exception.CuotaEstadoInvalidoException;
 import com.almoby.ruralcuruzu.exception.CuotaNoEncontradaException;
+import com.almoby.ruralcuruzu.exception.PagoNoEncontradoException;
 import com.almoby.ruralcuruzu.exception.SocioNoEncontradoException;
 import com.almoby.ruralcuruzu.repository.CuotaRepository;
 import com.almoby.ruralcuruzu.repository.EjecucionGeneracionCuotasRepository;
@@ -122,8 +124,7 @@ class CuotaServiceImplTest {
         // Default: ningún pago vigente salvo que un test lo indique explícitamente
         // (evita repetir este stub en cada test que no necesita un Pago).
         lenient().when(pagoRepository.findByCuotaIdIn(anyList())).thenReturn(List.of());
-        lenient().when(pagoRepository.findByCuotaIdAndEstado(anyString(), any(EstadoPago.class)))
-                .thenReturn(Optional.empty());
+        lenient().when(pagoRepository.findByCuotaId(anyString())).thenReturn(List.of());
     }
 
     private ReglaCuota reglaCuota(CategoriaSocio categoria, String nombre, String importe, int diaVencimiento) {
@@ -289,6 +290,26 @@ class CuotaServiceImplTest {
     }
 
     @Test
+    void obtenerCuotaPorId_conDosPagosEnRevisionParaLaMismaCuota_noRompeYMuestraElMasReciente() {
+        // Regresión: con dos links de pago generados para la misma cuota (posible
+        // desde que generar un link dejó de bloquearla), esto antes tiraba
+        // IncorrectResultSizeDataAccessException con solo abrir la pantalla de la
+        // cuota, mucho antes de llegar a informar/revisar nada.
+        Cuota cuota = cuotaPendiente("cuota-1", "socio-1");
+        when(cuotaRepository.findById("cuota-1")).thenReturn(Optional.of(cuota));
+        Pago linkViejo = Pago.builder().id("pago-viejo").cuotaId("cuota-1")
+                .estado(EstadoPago.EN_REVISION).fechaCreacion(Instant.now().minusSeconds(3600)).build();
+        Pago linkNuevo = Pago.builder().id("pago-nuevo").cuotaId("cuota-1")
+                .estado(EstadoPago.EN_REVISION).fechaCreacion(Instant.now()).build();
+        when(pagoRepository.findByCuotaId("cuota-1")).thenReturn(List.of(linkViejo, linkNuevo));
+
+        CuotaResponse response = service.obtenerCuotaPorId("cuota-1");
+
+        assertThat(response.pagoVigente()).isNotNull();
+        assertThat(response.pagoVigente().id()).isEqualTo("pago-nuevo");
+    }
+
+    @Test
     void listarCuotas_filtraPorEstadoSocioYPeriodo() {
         Cuota coincide = cuotaPendiente("cuota-1", "socio-1");
         when(cuotaRepository.findBySocioId("socio-1")).thenReturn(List.of(coincide));
@@ -333,6 +354,30 @@ class CuotaServiceImplTest {
         List<?> resultado = service.listarPagosDeSocio("socio-1");
 
         assertThat(resultado).hasSize(1);
+    }
+
+    // ---------- obtenerPagoPorId ----------
+
+    @Test
+    void obtenerPagoPorId_existente_devuelveElDetalleSinFiltrarPorSocio() {
+        Pago pago = pagoAprobado("pago-1", "cuota-1", "15000.00", MedioPago.EFECTIVO);
+        pago.setSocioId("socio-1");
+        when(pagoRepository.findById("pago-1")).thenReturn(Optional.of(pago));
+
+        PagoResponse resultado = service.obtenerPagoPorId("pago-1");
+
+        assertThat(resultado.id()).isEqualTo("pago-1");
+        assertThat(resultado.socioId()).isEqualTo("socio-1");
+        assertThat(resultado.medioPago()).isEqualTo(MedioPago.EFECTIVO);
+    }
+
+    @Test
+    void obtenerPagoPorId_inexistente_lanzaExcepcion() {
+        when(pagoRepository.findById("no-existe")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.obtenerPagoPorId("no-existe"))
+                .isInstanceOf(PagoNoEncontradoException.class)
+                .hasMessageContaining("no-existe");
     }
 
     // ---------- registrarPago ----------
@@ -601,7 +646,7 @@ class CuotaServiceImplTest {
         Pago pago = Pago.builder().id("pago-1").cuotaId("cuota-1")
                 .importe(new BigDecimal("15000.00")).estado(EstadoPago.EN_REVISION).informadoPorSocio(true).build();
         when(cuotaRepository.findById("cuota-1")).thenReturn(Optional.of(cuota));
-        when(pagoRepository.findByCuotaIdAndEstado("cuota-1", EstadoPago.EN_REVISION)).thenReturn(Optional.of(pago));
+        when(pagoRepository.findByCuotaId("cuota-1")).thenReturn(List.of(pago));
         when(socioRepository.findById("socio-1")).thenReturn(Optional.of(socioActivo("socio-1", "SOC-000001", CategoriaSocio.ACTIVO)));
 
         RevisarPagoInformadoResponse response = service.revisarPagoInformado(
@@ -620,7 +665,7 @@ class CuotaServiceImplTest {
         cuota.setEstado(EstadoCuota.EN_REVISION);
         Pago pago = Pago.builder().id("pago-1").cuotaId("cuota-1").estado(EstadoPago.EN_REVISION).build();
         when(cuotaRepository.findById("cuota-1")).thenReturn(Optional.of(cuota));
-        when(pagoRepository.findByCuotaIdAndEstado("cuota-1", EstadoPago.EN_REVISION)).thenReturn(Optional.of(pago));
+        when(pagoRepository.findByCuotaId("cuota-1")).thenReturn(List.of(pago));
 
         assertThatThrownBy(() -> service.revisarPagoInformado(
                 "cuota-1", new RevisarPagoInformadoRequest(false, null), "admin-1", "Admin Uno"))
@@ -633,7 +678,7 @@ class CuotaServiceImplTest {
         cuota.setEstado(EstadoCuota.EN_REVISION);
         Pago pago = Pago.builder().id("pago-1").cuotaId("cuota-1").estado(EstadoPago.EN_REVISION).build();
         when(cuotaRepository.findById("cuota-1")).thenReturn(Optional.of(cuota));
-        when(pagoRepository.findByCuotaIdAndEstado("cuota-1", EstadoPago.EN_REVISION)).thenReturn(Optional.of(pago));
+        when(pagoRepository.findByCuotaId("cuota-1")).thenReturn(List.of(pago));
         when(socioRepository.findById("socio-1")).thenReturn(Optional.of(socioActivo("socio-1", "SOC-000001", CategoriaSocio.ACTIVO)));
 
         RevisarPagoInformadoResponse response = service.revisarPagoInformado(
@@ -648,6 +693,33 @@ class CuotaServiceImplTest {
         // del rechazo se ve igual en CuotaResponse.motivoRechazo.
         assertThat(response.cuota().pagoVigente()).isNull();
         verify(emailService).enviarCorreoPagoRechazado(anyString(), anyString(), anyString(), eq("Comprobante ilegible"));
+    }
+
+    @Test
+    void revisarPagoInformado_conUnLinkDePagoAbandonadoDeLaMismaCuota_revisaLaTransferenciaMasReciente() {
+        // Regresión: antes de este fix, si había más de un Pago EN_REVISION para la
+        // misma cuota (un link de pago abandonado sin resolver + la transferencia
+        // recién informada), esto tiraba IncorrectResultSizeDataAccessException
+        // porque se buscaba con un findByCuotaIdAndEstado que devuelve Optional.
+        Cuota cuota = cuotaPendiente("cuota-1", "socio-1");
+        cuota.setEstado(EstadoCuota.EN_REVISION);
+        Instant hace2Dias = Instant.now().minusSeconds(172_800);
+        Pago linkAbandonado = Pago.builder().id("pago-viejo").cuotaId("cuota-1")
+                .medioPago(MedioPago.LINK_DE_PAGO).estado(EstadoPago.EN_REVISION).fechaCreacion(hace2Dias).build();
+        Pago transferenciaInformada = Pago.builder().id("pago-nuevo").cuotaId("cuota-1")
+                .importe(new BigDecimal("15000.00")).medioPago(MedioPago.TRANSFERENCIA)
+                .estado(EstadoPago.EN_REVISION).fechaCreacion(Instant.now()).build();
+        when(cuotaRepository.findById("cuota-1")).thenReturn(Optional.of(cuota));
+        when(pagoRepository.findByCuotaId("cuota-1")).thenReturn(List.of(linkAbandonado, transferenciaInformada));
+        when(socioRepository.findById("socio-1")).thenReturn(Optional.of(socioActivo("socio-1", "SOC-000001", CategoriaSocio.ACTIVO)));
+
+        RevisarPagoInformadoResponse response = service.revisarPagoInformado(
+                "cuota-1", new RevisarPagoInformadoRequest(true, null), "admin-1", "Admin Uno");
+
+        assertThat(response.cuota().estado()).isEqualTo(EstadoCuota.PAGADA);
+        // Se aprobó la transferencia (la más reciente), no el link abandonado.
+        assertThat(transferenciaInformada.getEstado()).isEqualTo(EstadoPago.APROBADO);
+        assertThat(linkAbandonado.getEstado()).isEqualTo(EstadoPago.EN_REVISION);
     }
 
     @Test
@@ -680,8 +752,12 @@ class CuotaServiceImplTest {
 
         assertThat(response.pagoId()).isEqualTo("pago-1");
         assertThat(response.linkDePago()).isEqualTo("https://mercadopago.com/checkout/pref-1");
-        assertThat(cuota.getEstado()).isEqualTo(EstadoCuota.EN_REVISION);
+        // Crear la preferencia no bloquea la cuota: recién se bloquea cuando Mercado
+        // Pago confirma por webhook que hay un intento real en curso (ver
+        // procesarNotificacionMercadoPago), no al abrir el link.
+        assertThat(cuota.getEstado()).isEqualTo(EstadoCuota.PENDIENTE);
         verify(pagoRepository, times(2)).save(any(Pago.class));
+        verify(cuotaRepository, never()).save(any());
     }
 
     @Test
@@ -721,7 +797,35 @@ class CuotaServiceImplTest {
         LinkDePagoResponse response = service.generarLinkDePago("cuota-1", "socio-1");
 
         assertThat(response.linkDePago()).isEqualTo("https://mercadopago.com/checkout/pref-2");
-        assertThat(cuota.getEstado()).isEqualTo(EstadoCuota.EN_REVISION);
+        // Igual que en el caso PENDIENTE: generar el link no cambia el estado de la
+        // cuota, sigue RECHAZADA (visible el motivo del intento anterior) hasta que
+        // Mercado Pago confirme algo nuevo sobre este intento.
+        assertThat(cuota.getEstado()).isEqualTo(EstadoCuota.RECHAZADA);
+        verify(cuotaRepository, never()).save(any());
+    }
+
+    @Test
+    void generarLinkDePago_abandonadoSinRespuestaDeMercadoPago_noDejaLaCuotaTrabada() {
+        // Caracterización del bug reportado por el front: el socio abre el link y
+        // cierra la pestaña sin pagar. Nunca llega ningún webhook (no hay pago real
+        // que consultar), así que la cuota debe seguir admitiendo un nuevo intento.
+        Cuota cuota = cuotaPendiente("cuota-1", "socio-1");
+        when(cuotaRepository.findById("cuota-1")).thenReturn(Optional.of(cuota));
+        when(pagoRepository.save(any(Pago.class))).thenAnswer(inv -> {
+            Pago pago = inv.getArgument(0);
+            if (pago.getId() == null) {
+                pago.setId("pago-1");
+            }
+            return pago;
+        });
+        when(mercadoPagoService.crearPreferencia(anyString(), anyString(), any(BigDecimal.class)))
+                .thenReturn(new PreferenciaMercadoPago("pref-1", "https://mercadopago.com/checkout/pref-1"));
+
+        service.generarLinkDePago("cuota-1", "socio-1");
+
+        // Sin ningún webhook de por medio, la cuota nunca se tocó: sigue admitiendo
+        // un nuevo link (o una transferencia) sin que el socio quede bloqueado.
+        assertThatCode(() -> service.generarLinkDePago("cuota-1", "socio-1")).doesNotThrowAnyException();
     }
 
     // ---------- procesarNotificacionMercadoPago (webhook) ----------
@@ -767,9 +871,54 @@ class CuotaServiceImplTest {
     }
 
     @Test
-    void procesarNotificacionMercadoPago_pendiente_noCambiaEstados() {
+    void procesarNotificacionMercadoPago_aprobadoConCuotaYaPagadaPorOtroIntento_noPisaLaCuota() {
+        // Doble intento en paralelo (dos links para la misma cuota): el primero ya
+        // la pagó. La aprobación tardía del segundo no debe volver a "aprobar" nada
+        // ni reenviar el correo de pago registrado (posible pago duplicado a
+        // resolver a mano, no algo que el sistema deba intentar arreglar solo).
         Cuota cuota = cuotaPendiente("cuota-1", "socio-1");
-        cuota.setEstado(EstadoCuota.EN_REVISION);
+        cuota.setEstado(EstadoCuota.PAGADA);
+        Pago pago = Pago.builder().id("pago-2").cuotaId("cuota-1").socioId("socio-1")
+                .estado(EstadoPago.EN_REVISION).medioPago(MedioPago.LINK_DE_PAGO).build();
+        when(mercadoPagoService.consultarPago("mp-pago-2"))
+                .thenReturn(new EstadoPagoMercadoPago("mp-pago-2", "approved", "pago-2"));
+        when(pagoRepository.findById("pago-2")).thenReturn(Optional.of(pago));
+        when(cuotaRepository.findById("cuota-1")).thenReturn(Optional.of(cuota));
+
+        service.procesarNotificacionMercadoPago("mp-pago-2");
+
+        // El Pago en sí sigue quedando aprobado (es verdad, Mercado Pago lo aprobó):
+        // lo que no hacemos es tocar la cuota, que otro intento ya había resuelto.
+        assertThat(pago.getEstado()).isEqualTo(EstadoPago.APROBADO);
+        assertThat(cuota.getEstado()).isEqualTo(EstadoCuota.PAGADA);
+        verify(cuotaRepository, never()).save(any());
+        verify(emailService, never()).enviarCorreoPagoRegistrado(anyString(), anyString(), anyString(), any());
+    }
+
+    @Test
+    void procesarNotificacionMercadoPago_rechazadoConCuotaYaPagadaPorOtroIntento_noLaReabre() {
+        Cuota cuota = cuotaPendiente("cuota-1", "socio-1");
+        cuota.setEstado(EstadoCuota.PAGADA);
+        Pago pago = Pago.builder().id("pago-2").cuotaId("cuota-1").socioId("socio-1")
+                .estado(EstadoPago.EN_REVISION).medioPago(MedioPago.LINK_DE_PAGO).build();
+        when(mercadoPagoService.consultarPago("mp-pago-2"))
+                .thenReturn(new EstadoPagoMercadoPago("mp-pago-2", "rejected", "pago-2"));
+        when(pagoRepository.findById("pago-2")).thenReturn(Optional.of(pago));
+        when(cuotaRepository.findById("cuota-1")).thenReturn(Optional.of(cuota));
+
+        service.procesarNotificacionMercadoPago("mp-pago-2");
+
+        assertThat(pago.getEstado()).isEqualTo(EstadoPago.RECHAZADO);
+        assertThat(cuota.getEstado()).isEqualTo(EstadoCuota.PAGADA);
+        verify(cuotaRepository, never()).save(any());
+        verify(emailService, never()).enviarCorreoPagoRechazado(anyString(), anyString(), anyString(), anyString());
+    }
+
+    @Test
+    void procesarNotificacionMercadoPago_pendienteDesdeCuotaPendiente_pasaAEnRevision() {
+        // Acá (y no al generar el link) es donde la cuota se bloquea de verdad: recién
+        // cuando Mercado Pago confirma que hay un intento real en curso.
+        Cuota cuota = cuotaPendiente("cuota-1", "socio-1");
         Pago pago = Pago.builder().id("pago-1").cuotaId("cuota-1").socioId("socio-1")
                 .estado(EstadoPago.EN_REVISION).medioPago(MedioPago.LINK_DE_PAGO).build();
         when(mercadoPagoService.consultarPago("mp-pago-1"))
@@ -785,6 +934,43 @@ class CuotaServiceImplTest {
         // fechaPago no debe fijarse hasta que el resultado sea definitivo.
         assertThat(pago.getFechaPago()).isNull();
         assertThat(pago.getMercadoPagoPaymentId()).isEqualTo("mp-pago-1");
+        verify(cuotaRepository, times(1)).save(cuota);
+    }
+
+    @Test
+    void procesarNotificacionMercadoPago_pendienteConCuotaYaEnRevision_noGuardaDeNuevo() {
+        Cuota cuota = cuotaPendiente("cuota-1", "socio-1");
+        cuota.setEstado(EstadoCuota.EN_REVISION);
+        Pago pago = Pago.builder().id("pago-1").cuotaId("cuota-1").socioId("socio-1")
+                .estado(EstadoPago.EN_REVISION).medioPago(MedioPago.LINK_DE_PAGO).build();
+        when(mercadoPagoService.consultarPago("mp-pago-1"))
+                .thenReturn(new EstadoPagoMercadoPago("mp-pago-1", "pending", "pago-1"));
+        when(pagoRepository.findById("pago-1")).thenReturn(Optional.of(pago));
+        when(cuotaRepository.findById("cuota-1")).thenReturn(Optional.of(cuota));
+
+        service.procesarNotificacionMercadoPago("mp-pago-1");
+
+        assertThat(cuota.getEstado()).isEqualTo(EstadoCuota.EN_REVISION);
+        verify(cuotaRepository, never()).save(any());
+    }
+
+    @Test
+    void procesarNotificacionMercadoPago_pendienteConCuotaYaPagadaPorOtroIntento_noLaReabre() {
+        // Caso límite: otro Pago en paralelo (otro link para la misma cuota) ya la
+        // había pagado; una notificación "pending" tardía de este intento no debe
+        // volver a poner la cuota en revisión.
+        Cuota cuota = cuotaPendiente("cuota-1", "socio-1");
+        cuota.setEstado(EstadoCuota.PAGADA);
+        Pago pago = Pago.builder().id("pago-1").cuotaId("cuota-1").socioId("socio-1")
+                .estado(EstadoPago.EN_REVISION).medioPago(MedioPago.LINK_DE_PAGO).build();
+        when(mercadoPagoService.consultarPago("mp-pago-1"))
+                .thenReturn(new EstadoPagoMercadoPago("mp-pago-1", "pending", "pago-1"));
+        when(pagoRepository.findById("pago-1")).thenReturn(Optional.of(pago));
+        when(cuotaRepository.findById("cuota-1")).thenReturn(Optional.of(cuota));
+
+        service.procesarNotificacionMercadoPago("mp-pago-1");
+
+        assertThat(cuota.getEstado()).isEqualTo(EstadoCuota.PAGADA);
         verify(cuotaRepository, never()).save(any());
     }
 
@@ -1058,6 +1244,49 @@ class CuotaServiceImplTest {
         assertThat(response.cantidadPendientes()).isEqualTo(3); // pendiente + vencida + en_revision
         assertThat(response.cantidadAprobadas()).isEqualTo(2);
         assertThat(response.cantidadRechazadas()).isEqualTo(1);
+
+        // cuotaPendiente() por defecto genera todo con categoria ACTIVO: todo el
+        // total cobrado y las 6 cuotas caen en esa fila, ADHERENTE queda en cero.
+        assertThat(response.cobranzaPorCategoria()).hasSize(2);
+        var porCategoriaActivo = response.cobranzaPorCategoria().stream()
+                .filter(c -> c.categoria() == CategoriaSocio.ACTIVO).findFirst().orElseThrow();
+        var porCategoriaAdherente = response.cobranzaPorCategoria().stream()
+                .filter(c -> c.categoria() == CategoriaSocio.ADHERENTE).findFirst().orElseThrow();
+        assertThat(porCategoriaActivo.totalCobrado()).isEqualByComparingTo(new BigDecimal("25000.00"));
+        assertThat(porCategoriaActivo.cantidadCuotas()).isEqualTo(6);
+        assertThat(porCategoriaAdherente.totalCobrado()).isEqualByComparingTo(BigDecimal.ZERO);
+        assertThat(porCategoriaAdherente.cantidadCuotas()).isZero();
+    }
+
+    @Test
+    void obtenerResumen_conCuotasDeAmbasCategorias_desglosaCorrectamente() {
+        Cuota pagadaActivo = cuotaPendiente("cuota-1", "socio-1");
+        pagadaActivo.setEstado(EstadoCuota.PAGADA);
+        pagadaActivo.setCategoria(CategoriaSocio.ACTIVO);
+
+        Cuota pagadaAdherente = cuotaPendiente("cuota-2", "socio-2");
+        pagadaAdherente.setEstado(EstadoCuota.PAGADA);
+        pagadaAdherente.setCategoria(CategoriaSocio.ADHERENTE);
+
+        Cuota pendienteAdherente = cuotaPendiente("cuota-3", "socio-3");
+        pendienteAdherente.setCategoria(CategoriaSocio.ADHERENTE);
+
+        when(cuotaRepository.findAll()).thenReturn(List.of(pagadaActivo, pagadaAdherente, pendienteAdherente));
+        when(pagoRepository.findByEstado(EstadoPago.APROBADO)).thenReturn(List.of(
+                pagoAprobado("pago-1", "cuota-1", "15000.00", MedioPago.EFECTIVO),
+                pagoAprobado("pago-2", "cuota-2", "8000.00", MedioPago.TRANSFERENCIA)));
+
+        ResumenCuotasResponse response = service.obtenerResumen();
+
+        var porCategoriaActivo = response.cobranzaPorCategoria().stream()
+                .filter(c -> c.categoria() == CategoriaSocio.ACTIVO).findFirst().orElseThrow();
+        var porCategoriaAdherente = response.cobranzaPorCategoria().stream()
+                .filter(c -> c.categoria() == CategoriaSocio.ADHERENTE).findFirst().orElseThrow();
+
+        assertThat(porCategoriaActivo.totalCobrado()).isEqualByComparingTo(new BigDecimal("15000.00"));
+        assertThat(porCategoriaActivo.cantidadCuotas()).isEqualTo(1);
+        assertThat(porCategoriaAdherente.totalCobrado()).isEqualByComparingTo(new BigDecimal("8000.00"));
+        assertThat(porCategoriaAdherente.cantidadCuotas()).isEqualTo(2);
     }
 
     // ---------- generarCuotas: Mongo real (Testcontainers) ----------

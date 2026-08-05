@@ -24,12 +24,17 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.almoby.ruralcuruzu.constantes.SocioConstantes;
 import com.almoby.ruralcuruzu.domain.DatosPersonaFisica;
+import com.almoby.ruralcuruzu.domain.DatosPersonaJuridica;
 import com.almoby.ruralcuruzu.domain.Socio;
 import com.almoby.ruralcuruzu.domain.SolicitudSocio;
 import com.almoby.ruralcuruzu.domain.Usuario;
+import com.almoby.ruralcuruzu.dto.request.ActualizarSocioParcialRequest;
 import com.almoby.ruralcuruzu.dto.request.AltaManualSocioRequest;
+import com.almoby.ruralcuruzu.dto.request.CambiarEstadoSocioRequest;
+import com.almoby.ruralcuruzu.dto.response.CambiarEstadoSocioResponse;
 import com.almoby.ruralcuruzu.dto.response.EstadoQrResponse;
 import com.almoby.ruralcuruzu.dto.response.MiQrResponse;
+import com.almoby.ruralcuruzu.dto.response.SocioActualizadoResponse;
 import com.almoby.ruralcuruzu.dto.response.SocioCreadoResponse;
 import com.almoby.ruralcuruzu.dto.response.SocioResponse;
 import com.almoby.ruralcuruzu.dto.response.SocioResumenResponse;
@@ -405,6 +410,173 @@ class SocioServiceImplTest {
         assertThatThrownBy(() -> service.obtenerMiQr("no-existe"))
                 .isInstanceOf(SocioNoEncontradoException.class)
                 .hasMessageContaining("no-existe");
+    }
+
+    private Socio socioJuridico(String id, String razonSocial) {
+        return Socio.builder()
+                .id(id)
+                .numeroSocio("SOC-000010")
+                .categoria(CategoriaSocio.ADHERENTE)
+                .tipoPersona(TipoPersona.JURIDICA)
+                .datosPersonaJuridica(new DatosPersonaJuridica(
+                        razonSocial, "30-71234567-9", "Calle 123", null, "+54 9 3777123456",
+                        "contacto@comercialdelsur.com", "Depósito", "María Fernández", "30123456", "Ruta 123 km 4"))
+                .estado(EstadoSocio.ACTIVO)
+                .usuarioId("usuario-1")
+                .build();
+    }
+
+    @Test
+    void cambiarEstadoSocio_actualizaEstadoYFecha() {
+        Socio socio = socioActivo("socio-1", "SOC-000001", "García, Juan Carlos");
+        when(socioRepository.findById("socio-1")).thenReturn(Optional.of(socio));
+
+        CambiarEstadoSocioResponse response = service.cambiarEstadoSocio(
+                "socio-1", new CambiarEstadoSocioRequest(EstadoSocio.DADO_DE_BAJA));
+
+        assertThat(response.id()).isEqualTo("socio-1");
+        assertThat(response.estado()).isEqualTo(EstadoSocio.DADO_DE_BAJA);
+        assertThat(response.mensaje()).isEqualTo("Socio dado de baja correctamente");
+        assertThat(socio.getEstado()).isEqualTo(EstadoSocio.DADO_DE_BAJA);
+        verify(socioRepository).save(socio);
+    }
+
+    @Test
+    void cambiarEstadoSocio_inexistente_lanzaExcepcion() {
+        when(socioRepository.findById("no-existe")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.cambiarEstadoSocio("no-existe", new CambiarEstadoSocioRequest(EstadoSocio.ACTIVO)))
+                .isInstanceOf(SocioNoEncontradoException.class);
+    }
+
+    @Test
+    void actualizarSocioParcial_personaFisica_soloActualizaLosCamposEnviados() {
+        Socio socio = socioActivo("socio-1", "SOC-000001", "García, Juan Carlos");
+        when(socioRepository.findById("socio-1")).thenReturn(Optional.of(socio));
+
+        ActualizarSocioParcialRequest request = new ActualizarSocioParcialRequest(
+                null, "+54 9 3777999888", null, null, null, null, null);
+
+        SocioActualizadoResponse response = service.actualizarSocioParcial("socio-1", request);
+
+        assertThat(response.mensaje()).isEqualTo("Socio actualizado correctamente");
+        assertThat(socio.getDatosPersonaFisica().getTelefono()).isEqualTo("+54 9 3777999888");
+        // El resto de los campos no se tocó.
+        assertThat(socio.getDatosPersonaFisica().getApellidoYNombre()).isEqualTo("García, Juan Carlos");
+        assertThat(socio.getDatosPersonaFisica().getCorreoElectronico()).isEqualTo("socio@example.com");
+        assertThat(socio.getCategoria()).isEqualTo(CategoriaSocio.ACTIVO);
+        verify(usuarioRepository, never()).save(any(Usuario.class));
+    }
+
+    @Test
+    void actualizarSocioParcial_personaJuridica_editaLosCamposDeDatosPersonaJuridica() {
+        Socio socio = socioJuridico("socio-1", "Comercial del Sur S.A.");
+        when(socioRepository.findById("socio-1")).thenReturn(Optional.of(socio));
+
+        ActualizarSocioParcialRequest request = new ActualizarSocioParcialRequest(
+                CategoriaSocio.ACTIVO, "+54 9 3777111222", null, "Nueva dirección 456", null, null, null);
+
+        service.actualizarSocioParcial("socio-1", request);
+
+        assertThat(socio.getCategoria()).isEqualTo(CategoriaSocio.ACTIVO);
+        assertThat(socio.getDatosPersonaJuridica().getTelefono()).isEqualTo("+54 9 3777111222");
+        assertThat(socio.getDatosPersonaJuridica().getDireccion()).isEqualTo("Nueva dirección 456");
+        assertThat(socio.getDatosPersonaJuridica().getRazonSocial()).isEqualTo("Comercial del Sur S.A.");
+    }
+
+    @Test
+    void actualizarSocioParcial_correoNuevo_sincronizaElEmailDelUsuario() {
+        Socio socio = socioActivo("socio-1", "SOC-000001", "García, Juan Carlos");
+        socio.setUsuarioId("usuario-1");
+        when(socioRepository.findById("socio-1")).thenReturn(Optional.of(socio));
+        when(usuarioRepository.existsByEmail("nuevo@example.com")).thenReturn(false);
+        Usuario usuario = Usuario.builder().id("usuario-1").email("socio@example.com").build();
+        when(usuarioRepository.findById("usuario-1")).thenReturn(Optional.of(usuario));
+
+        ActualizarSocioParcialRequest request = new ActualizarSocioParcialRequest(
+                null, null, "nuevo@example.com", null, null, null, null);
+
+        service.actualizarSocioParcial("socio-1", request);
+
+        assertThat(socio.getDatosPersonaFisica().getCorreoElectronico()).isEqualTo("nuevo@example.com");
+        assertThat(usuario.getEmail()).isEqualTo("nuevo@example.com");
+        verify(usuarioRepository).save(usuario);
+    }
+
+    @Test
+    void actualizarSocioParcial_correoYaRegistrado_lanzaExcepcionYNoGuardaNada() {
+        Socio socio = socioActivo("socio-1", "SOC-000001", "García, Juan Carlos");
+        when(socioRepository.findById("socio-1")).thenReturn(Optional.of(socio));
+        when(usuarioRepository.existsByEmail("ya.registrado@example.com")).thenReturn(true);
+
+        ActualizarSocioParcialRequest request = new ActualizarSocioParcialRequest(
+                null, null, "ya.registrado@example.com", null, null, null, null);
+
+        assertThatThrownBy(() -> service.actualizarSocioParcial("socio-1", request))
+                .isInstanceOf(EmailYaRegistradoException.class);
+
+        verify(socioRepository, never()).save(any(Socio.class));
+    }
+
+    @Test
+    void actualizarSocioParcial_conElMismoCorreoQueYaTenia_noConsultaDuplicadosNiTocaElUsuario() {
+        Socio socio = socioActivo("socio-1", "SOC-000001", "García, Juan Carlos");
+        socio.setUsuarioId("usuario-1");
+        when(socioRepository.findById("socio-1")).thenReturn(Optional.of(socio));
+
+        ActualizarSocioParcialRequest request = new ActualizarSocioParcialRequest(
+                null, null, "socio@example.com", null, null, null, null);
+
+        service.actualizarSocioParcial("socio-1", request);
+
+        verify(usuarioRepository, never()).existsByEmail(anyString());
+        verify(usuarioRepository, never()).save(any(Usuario.class));
+    }
+
+    @Test
+    void actualizarSocioParcial_soloCategoria_noTocaLosDatosPersonales() {
+        Socio socio = socioActivo("socio-1", "SOC-000001", "García, Juan Carlos");
+        when(socioRepository.findById("socio-1")).thenReturn(Optional.of(socio));
+
+        ActualizarSocioParcialRequest request = new ActualizarSocioParcialRequest(
+                CategoriaSocio.ADHERENTE, null, null, null, null, null, null);
+
+        service.actualizarSocioParcial("socio-1", request);
+
+        assertThat(socio.getCategoria()).isEqualTo(CategoriaSocio.ADHERENTE);
+        assertThat(socio.getDatosPersonaFisica().getTelefono()).isEqualTo("+54 9 3777123456");
+        verify(usuarioRepository, never()).save(any(Usuario.class));
+    }
+
+    @Test
+    void actualizarSocioParcial_requestVacio_noRompeYNoCambiaNada_personaFisicaYJuridica() {
+        Socio fisico = socioActivo("socio-1", "SOC-000001", "García, Juan Carlos");
+        when(socioRepository.findById("socio-1")).thenReturn(Optional.of(fisico));
+        Socio juridico = socioJuridico("socio-2", "Comercial del Sur S.A.");
+        when(socioRepository.findById("socio-2")).thenReturn(Optional.of(juridico));
+
+        ActualizarSocioParcialRequest requestVacio = new ActualizarSocioParcialRequest(
+                null, null, null, null, null, null, null);
+
+        SocioActualizadoResponse respuestaFisica = service.actualizarSocioParcial("socio-1", requestVacio);
+        SocioActualizadoResponse respuestaJuridica = service.actualizarSocioParcial("socio-2", requestVacio);
+
+        assertThat(respuestaFisica.mensaje()).isEqualTo("Socio actualizado correctamente");
+        assertThat(respuestaJuridica.mensaje()).isEqualTo("Socio actualizado correctamente");
+        assertThat(fisico.getCategoria()).isEqualTo(CategoriaSocio.ACTIVO);
+        assertThat(juridico.getDatosPersonaJuridica().getRazonSocial()).isEqualTo("Comercial del Sur S.A.");
+        verify(usuarioRepository, never()).save(any(Usuario.class));
+    }
+
+    @Test
+    void actualizarSocioParcial_inexistente_lanzaExcepcion() {
+        when(socioRepository.findById("no-existe")).thenReturn(Optional.empty());
+
+        ActualizarSocioParcialRequest request = new ActualizarSocioParcialRequest(
+                null, "+54 9 3777999888", null, null, null, null, null);
+
+        assertThatThrownBy(() -> service.actualizarSocioParcial("no-existe", request))
+                .isInstanceOf(SocioNoEncontradoException.class);
     }
 
     private void doAnswerAsignarIdSocio() {

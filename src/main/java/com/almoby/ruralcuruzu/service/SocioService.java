@@ -4,8 +4,12 @@ import java.util.List;
 
 import com.almoby.ruralcuruzu.domain.Socio;
 import com.almoby.ruralcuruzu.domain.SolicitudSocio;
+import com.almoby.ruralcuruzu.dto.request.ActualizarSocioParcialRequest;
 import com.almoby.ruralcuruzu.dto.request.AltaManualSocioRequest;
+import com.almoby.ruralcuruzu.dto.request.CambiarEstadoSocioRequest;
+import com.almoby.ruralcuruzu.dto.response.CambiarEstadoSocioResponse;
 import com.almoby.ruralcuruzu.dto.response.MiQrResponse;
+import com.almoby.ruralcuruzu.dto.response.SocioActualizadoResponse;
 import com.almoby.ruralcuruzu.dto.response.SocioCreadoResponse;
 import com.almoby.ruralcuruzu.dto.response.SocioResponse;
 import com.almoby.ruralcuruzu.dto.response.SocioResumenResponse;
@@ -51,4 +55,19 @@ public interface SocioService {
      * su estado vigente. Cada llamada devuelve un token distinto.
      */
     MiQrResponse obtenerMiQr(String socioId);
+
+    /**
+     * Cambia el estado de membresía del socio (ACTIVO/INACTIVO/DADO_DE_BAJA),
+     * sin restricciones de transición (igual que ComercioService.cambiarEstadoComercio).
+     */
+    CambiarEstadoSocioResponse cambiarEstadoSocio(String id, CambiarEstadoSocioRequest request);
+
+    /**
+     * Edición campo por campo (PATCH): solo se actualizan los campos no
+     * vacíos del request, el resto queda igual. No incluye datos
+     * identificatorios (ver {@link ActualizarSocioParcialRequest}). Si
+     * cambia el correo electrónico, también se sincroniza el email de login
+     * del Usuario del socio.
+     */
+    SocioActualizadoResponse actualizarSocioParcial(String id, ActualizarSocioParcialRequest request);
 }

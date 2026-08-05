@@ -5,6 +5,7 @@ import java.util.List;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -13,7 +14,11 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.almoby.ruralcuruzu.constantes.RutasApi;
+import com.almoby.ruralcuruzu.dto.request.ActualizarSocioParcialRequest;
 import com.almoby.ruralcuruzu.dto.request.AltaManualSocioRequest;
+import com.almoby.ruralcuruzu.dto.request.CambiarEstadoSocioRequest;
+import com.almoby.ruralcuruzu.dto.response.CambiarEstadoSocioResponse;
+import com.almoby.ruralcuruzu.dto.response.SocioActualizadoResponse;
 import com.almoby.ruralcuruzu.dto.response.SocioCreadoResponse;
 import com.almoby.ruralcuruzu.dto.response.SocioResponse;
 import com.almoby.ruralcuruzu.dto.response.SocioResumenResponse;
@@ -97,5 +102,51 @@ public class SocioAdminController {
     public ResponseEntity<SocioResponse> obtenerSocio(@PathVariable String id) {
         log.info("GET /api/admin/socios/{}", id);
         return ResponseEntity.ok(socioService.obtenerSocioPorId(id));
+    }
+
+    @Operation(summary = "Cambiar el estado de un socio",
+            description = "Cambia el estado de membresía (ACTIVO, INACTIVO, DADO_DE_BAJA), sin restricciones de "
+                    + "transición: se puede pasar de cualquier estado a cualquier otro.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Estado actualizado correctamente"),
+            @ApiResponse(responseCode = "404", description = "No existe un socio con ese id",
+                    content = @Content(schema = @Schema(implementation = ApiErrorResponse.class)))
+    })
+    @PatchMapping("/{id}/estado")
+    public ResponseEntity<CambiarEstadoSocioResponse> cambiarEstadoSocio(
+            @PathVariable String id,
+            @Valid @RequestBody CambiarEstadoSocioRequest request) {
+        log.info("PATCH /api/admin/socios/{}/estado - nuevoEstado={}", id, request.nuevoEstado());
+
+        CambiarEstadoSocioResponse response = socioService.cambiarEstadoSocio(id, request);
+
+        log.info("PATCH /api/admin/socios/{}/estado - actualizado a {}", id, request.nuevoEstado());
+        return ResponseEntity.ok(response);
+    }
+
+    @Operation(summary = "Editar un socio campo por campo",
+            description = "Todos los campos son opcionales: solo se actualizan los que vengan con un valor no "
+                    + "vacío en el body, el resto queda exactamente como estaba (ej. mandar solo `telefono` cambia "
+                    + "únicamente el teléfono). No incluye datos identificatorios (DNI, apellido y nombre / razón "
+                    + "social, CUIT/CUIL, etc.), que quedan fijos a lo declarado en el alta. Si cambia el correo "
+                    + "electrónico, también se sincroniza el email de login de la cuenta de acceso del socio.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Socio actualizado correctamente"),
+            @ApiResponse(responseCode = "400", description = "Algún campo enviado tiene un formato inválido, o el "
+                    + "correo ya lo usa otra cuenta",
+                    content = @Content(schema = @Schema(implementation = ApiErrorResponse.class))),
+            @ApiResponse(responseCode = "404", description = "No existe un socio con ese id",
+                    content = @Content(schema = @Schema(implementation = ApiErrorResponse.class)))
+    })
+    @PatchMapping("/{id}")
+    public ResponseEntity<SocioActualizadoResponse> actualizarSocioParcial(
+            @PathVariable String id,
+            @Valid @RequestBody ActualizarSocioParcialRequest request) {
+        log.info("PATCH /api/admin/socios/{}", id);
+
+        SocioActualizadoResponse response = socioService.actualizarSocioParcial(id, request);
+
+        log.info("PATCH /api/admin/socios/{} - actualizado parcialmente", id);
+        return ResponseEntity.ok(response);
     }
 }

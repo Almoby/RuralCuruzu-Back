@@ -17,6 +17,7 @@ public record PagoResponse(
 
         String id,
         String cuotaId,
+        String socioId,
         String socioNumeroSocio,
         String socioNombre,
         String periodo,
@@ -40,6 +41,7 @@ public record PagoResponse(
         return new PagoResponse(
                 pago.getId(),
                 pago.getCuotaId(),
+                pago.getSocioId(),
                 pago.getSocioNumeroSocio(),
                 pago.getSocioNombre(),
                 pago.getPeriodo(),

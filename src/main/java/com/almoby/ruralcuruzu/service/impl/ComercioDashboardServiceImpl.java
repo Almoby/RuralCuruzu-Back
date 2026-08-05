@@ -14,6 +14,7 @@ import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 
 import com.almoby.ruralcuruzu.domain.Beneficio;
+import com.almoby.ruralcuruzu.domain.Comercio;
 import com.almoby.ruralcuruzu.domain.HistorialBeneficio;
 import com.almoby.ruralcuruzu.dto.response.ConsumoRecienteResponse;
 import com.almoby.ruralcuruzu.dto.response.EstadisticasComercioResponse;
@@ -24,10 +25,13 @@ import com.almoby.ruralcuruzu.dto.response.UsoDiaSemanaResponse;
 import com.almoby.ruralcuruzu.dto.response.UsoMensualResponse;
 import com.almoby.ruralcuruzu.dto.response.UsoPorPromocionResponse;
 import com.almoby.ruralcuruzu.enums.EstadoUsoBeneficio;
+import com.almoby.ruralcuruzu.exception.ComercioNoEncontradoException;
 import com.almoby.ruralcuruzu.repository.BeneficioRepository;
+import com.almoby.ruralcuruzu.repository.ComercioRepository;
 import com.almoby.ruralcuruzu.repository.HistorialBeneficioRepository;
 import com.almoby.ruralcuruzu.service.ComercioDashboardService;
 import com.almoby.ruralcuruzu.util.FechaUtil;
+import com.almoby.ruralcuruzu.util.RepositorioUtil;
 
 /**
  * "Inicio" y "Estadísticas" del portal de comercio (equivalente reducido,
@@ -49,17 +53,23 @@ public class ComercioDashboardServiceImpl implements ComercioDashboardService {
     /** Cuántas filas mostrar en "Detalle de consumos recientes". */
     private static final int CANTIDAD_CONSUMOS_RECIENTES = 10;
 
+    private final ComercioRepository comercioRepository;
     private final BeneficioRepository beneficioRepository;
     private final HistorialBeneficioRepository historialBeneficioRepository;
 
-    public ComercioDashboardServiceImpl(BeneficioRepository beneficioRepository,
+    public ComercioDashboardServiceImpl(ComercioRepository comercioRepository,
+                                         BeneficioRepository beneficioRepository,
                                          HistorialBeneficioRepository historialBeneficioRepository) {
+        this.comercioRepository = comercioRepository;
         this.beneficioRepository = beneficioRepository;
         this.historialBeneficioRepository = historialBeneficioRepository;
     }
 
     @Override
     public InicioComercioResponse obtenerInicio(String comercioId) {
+        Comercio comercio = RepositorioUtil.buscarOFallar(
+                comercioRepository::findById, comercioId, ComercioNoEncontradoException::new);
+
         Instant inicioMes = FechaUtil.inicioDeMesActual();
         Instant inicioSemana = FechaUtil.inicioDeSemanaActual();
         Instant desde = inicioSemana.isBefore(inicioMes) ? inicioSemana : inicioMes;
@@ -73,6 +83,7 @@ public class ComercioDashboardServiceImpl implements ComercioDashboardService {
                 .toList();
 
         return new InicioComercioResponse(
+                comercio.getEstado(),
                 calcularIndicadores(comercioId, usosDelMes),
                 agruparPorDia(usosDeLaSemana));
     }

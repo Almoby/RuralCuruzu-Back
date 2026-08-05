@@ -24,6 +24,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import com.almoby.ruralcuruzu.domain.Comercio;
 import com.almoby.ruralcuruzu.domain.Socio;
 import com.almoby.ruralcuruzu.domain.Usuario;
+import com.almoby.ruralcuruzu.enums.CategoriaSocio;
 import com.almoby.ruralcuruzu.enums.EstadoComercio;
 import com.almoby.ruralcuruzu.enums.EstadoSocio;
 import com.almoby.ruralcuruzu.enums.EstadoUsuario;
@@ -119,7 +120,8 @@ class AuthServiceImplTest {
     }
 
     private Socio socioActivo() {
-        return Socio.builder().id("socio-1").estado(EstadoSocio.ACTIVO).build();
+        return Socio.builder().id("socio-1").numeroSocio("SOC-000001").categoria(CategoriaSocio.ACTIVO)
+                .estado(EstadoSocio.ACTIVO).build();
     }
 
     // ---------- login ----------
@@ -141,6 +143,8 @@ class AuthServiceImplTest {
         assertThat(response.token()).isEqualTo("access-token");
         assertThat(response.refreshToken()).isEqualTo("refresh-token");
         assertThat(response.rol()).isEqualTo(Rol.SOCIO);
+        assertThat(response.numeroSocio()).isEqualTo("SOC-000001");
+        assertThat(response.categoria()).isEqualTo(CategoriaSocio.ACTIVO);
         verify(usuarioRepository, never()).save(any());
     }
 
@@ -278,6 +282,8 @@ class AuthServiceImplTest {
         LoginResponse response = authService.login(request);
 
         assertThat(response.rol()).isEqualTo(Rol.COMERCIO);
+        assertThat(response.numeroSocio()).isNull();
+        assertThat(response.categoria()).isNull();
     }
 
     @Test
@@ -483,6 +489,8 @@ class AuthServiceImplTest {
 
         assertThat(response.token()).isEqualTo("nuevo-access-token");
         assertThat(response.refreshToken()).isEqualTo("nuevo-refresh-token");
+        assertThat(response.numeroSocio()).isEqualTo("SOC-000001");
+        assertThat(response.categoria()).isEqualTo(CategoriaSocio.ACTIVO);
     }
 
     @Test

@@ -11,9 +11,11 @@ import java.util.List;
 import org.springframework.stereotype.Service;
 
 import com.almoby.ruralcuruzu.dto.response.BeneficioMasUtilizadoResponse;
+import com.almoby.ruralcuruzu.dto.response.CobranzaMensualPorCategoriaResponse;
 import com.almoby.ruralcuruzu.dto.response.CobranzaMensualResponse;
 import com.almoby.ruralcuruzu.dto.response.EstadoSociosResponse;
 import com.almoby.ruralcuruzu.dto.response.IndicadoresPrincipalesResponse;
+import com.almoby.ruralcuruzu.dto.response.SocioConDeudaResponse;
 import com.almoby.ruralcuruzu.dto.response.UsoBeneficioPorComercioResponse;
 import com.almoby.ruralcuruzu.service.DashboardExportService;
 import com.almoby.ruralcuruzu.service.DashboardService;
@@ -60,10 +62,13 @@ public class DashboardExportServiceImpl implements DashboardExportService {
             PdfWriter.getInstance(documento, salida);
             documento.open();
 
+            int anioActual = Year.now().getValue();
             agregarEncabezado(documento);
             agregarIndicadoresPrincipales(documento, dashboardService.obtenerIndicadoresPrincipales());
-            agregarCobranzaMensual(documento, dashboardService.obtenerCobranzaMensual(Year.now().getValue()));
+            agregarCobranzaMensual(documento, dashboardService.obtenerCobranzaMensual(anioActual));
+            agregarCobranzaMensualPorCategoria(documento, dashboardService.obtenerCobranzaMensualPorCategoria(anioActual));
             agregarEstadoSocios(documento, dashboardService.obtenerEstadoSocios(null, null));
+            agregarSociosConDeuda(documento, dashboardService.obtenerSociosConDeuda());
             agregarUsoPorComercio(documento, dashboardService.obtenerUsoBeneficiosPorComercio());
             agregarBeneficiosMasUtilizados(documento, dashboardService.obtenerBeneficiosMasUtilizados());
 
@@ -92,7 +97,9 @@ public class DashboardExportServiceImpl implements DashboardExportService {
 
         PdfPTable tabla = nuevaTabla(2, 60, 40);
         agregarFilaEtiquetaValor(tabla, "Total de socios", String.valueOf(indicadores.totalSocios()));
+        agregarFilaEtiquetaValor(tabla, "Socios activos", String.valueOf(indicadores.sociosActivos()));
         agregarFilaEtiquetaValor(tabla, "Socios nuevos este mes", String.valueOf(indicadores.sociosNuevosEsteMes()));
+        agregarFilaEtiquetaValor(tabla, "Socios nuevos este año", String.valueOf(indicadores.sociosNuevosEsteAnio()));
         agregarFilaEtiquetaValor(tabla, "Socios con cuota al día", String.valueOf(indicadores.sociosConCuotaAlDia()));
         agregarFilaEtiquetaValor(tabla, "Socios con cuota pendiente", String.valueOf(indicadores.sociosConCuotaPendiente()));
         agregarFilaEtiquetaValor(tabla, "Socios con cuota vencida", String.valueOf(indicadores.sociosConCuotaVencida()));
@@ -118,6 +125,40 @@ public class DashboardExportServiceImpl implements DashboardExportService {
             agregarCelda(tabla, fila.mes(), Element.ALIGN_LEFT);
             agregarCelda(tabla, formatoMoneda(fila.cobrado()), Element.ALIGN_RIGHT);
             agregarCelda(tabla, formatoMoneda(fila.pendiente()), Element.ALIGN_RIGHT);
+        }
+        documento.add(tabla);
+    }
+
+    private void agregarCobranzaMensualPorCategoria(Document documento, List<CobranzaMensualPorCategoriaResponse> cobranza)
+            throws DocumentException {
+        agregarTituloSeccion(documento, "Cuotas cobradas por mes - socios activos y adherentes");
+
+        PdfPTable tabla = nuevaTabla(3, 34, 33, 33);
+        agregarEncabezados(tabla, "Mes", "Cobrado (Activo)", "Cobrado (Adherente)");
+        for (CobranzaMensualPorCategoriaResponse fila : cobranza) {
+            agregarCelda(tabla, fila.mes(), Element.ALIGN_LEFT);
+            agregarCelda(tabla, formatoMoneda(fila.cobradoActivo()), Element.ALIGN_RIGHT);
+            agregarCelda(tabla, formatoMoneda(fila.cobradoAdherente()), Element.ALIGN_RIGHT);
+        }
+        documento.add(tabla);
+    }
+
+    private void agregarSociosConDeuda(Document documento, List<SocioConDeudaResponse> sociosConDeuda)
+            throws DocumentException {
+        agregarTituloSeccion(documento, "Deuda acumulada por socio");
+
+        if (sociosConDeuda.isEmpty()) {
+            documento.add(new Paragraph("No hay socios con cuotas vencidas.", FUENTE_CELDA));
+            return;
+        }
+
+        PdfPTable tabla = nuevaTabla(4, 15, 40, 25, 20);
+        agregarEncabezados(tabla, "N° socio", "Nombre", "Monto adeudado", "Cuotas vencidas");
+        for (SocioConDeudaResponse fila : sociosConDeuda) {
+            agregarCelda(tabla, valorOGuion(fila.numeroSocio()), Element.ALIGN_LEFT);
+            agregarCelda(tabla, valorOGuion(fila.nombre()), Element.ALIGN_LEFT);
+            agregarCelda(tabla, formatoMoneda(fila.montoAdeudado()), Element.ALIGN_RIGHT);
+            agregarCelda(tabla, String.valueOf(fila.cantidadCuotasVencidas()), Element.ALIGN_RIGHT);
         }
         documento.add(tabla);
     }

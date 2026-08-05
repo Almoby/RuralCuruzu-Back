@@ -1,5 +1,6 @@
 package com.almoby.ruralcuruzu.dto.response;
 
+import com.almoby.ruralcuruzu.enums.CategoriaSocio;
 import com.almoby.ruralcuruzu.enums.Rol;
 
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -36,10 +37,19 @@ public record LoginResponse(
 
         @Schema(description = "Si es true, el frontend debe forzar una pantalla de cambio de contraseña "
                 + "antes de dejar usar el resto de la app (cuenta creada con contraseña temporal).")
-        boolean requiereCambioPassword
+        boolean requiereCambioPassword,
+
+        @Schema(description = "Número de socio. Solo si rol es SOCIO, null para COMERCIO/ADMIN. Se incluye acá "
+                + "para que el frontend lo tenga disponible apenas loguea, sin tener que pedirlo aparte.")
+        String numeroSocio,
+
+        @Schema(description = "Categoría de asociación. Solo si rol es SOCIO, null para COMERCIO/ADMIN.")
+        CategoriaSocio categoria
 ) {
     public static LoginResponse bearer(String token, String refreshToken, Rol rol, String nombre, String refId,
-                                        long expiraEnSegundos, boolean requiereCambioPassword) {
-        return new LoginResponse(token, "Bearer", refreshToken, rol, nombre, refId, expiraEnSegundos, requiereCambioPassword);
+                                        long expiraEnSegundos, boolean requiereCambioPassword,
+                                        String numeroSocio, CategoriaSocio categoria) {
+        return new LoginResponse(token, "Bearer", refreshToken, rol, nombre, refId, expiraEnSegundos,
+                requiereCambioPassword, numeroSocio, categoria);
     }
 }

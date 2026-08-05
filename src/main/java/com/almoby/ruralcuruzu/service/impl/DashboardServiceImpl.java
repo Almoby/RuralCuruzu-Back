@@ -18,10 +18,12 @@ import com.almoby.ruralcuruzu.domain.Cuota;
 import com.almoby.ruralcuruzu.domain.HistorialBeneficio;
 import com.almoby.ruralcuruzu.domain.Socio;
 import com.almoby.ruralcuruzu.dto.response.BeneficioMasUtilizadoResponse;
+import com.almoby.ruralcuruzu.dto.response.CobranzaMensualPorCategoriaResponse;
 import com.almoby.ruralcuruzu.dto.response.CobranzaMensualResponse;
 import com.almoby.ruralcuruzu.dto.response.DashboardPrincipalResponse;
 import com.almoby.ruralcuruzu.dto.response.EstadoSociosResponse;
 import com.almoby.ruralcuruzu.dto.response.IndicadoresPrincipalesResponse;
+import com.almoby.ruralcuruzu.dto.response.SocioConDeudaResponse;
 import com.almoby.ruralcuruzu.dto.response.UsoBeneficioPorComercioResponse;
 import com.almoby.ruralcuruzu.dto.response.UsoPeriodoResponse;
 import com.almoby.ruralcuruzu.enums.CategoriaSocio;
@@ -84,7 +86,9 @@ public class DashboardServiceImpl implements DashboardService {
         return new DashboardPrincipalResponse(
                 obtenerIndicadoresPrincipales(),
                 obtenerCobranzaMensual(anio),
+                obtenerCobranzaMensualPorCategoria(anio),
                 obtenerEstadoSocios(categoria, tipoPersona),
+                obtenerSociosConDeuda(),
                 obtenerUsoBeneficiosPorComercio(),
                 obtenerBeneficiosMasUtilizados());
     }
@@ -96,10 +100,15 @@ public class DashboardServiceImpl implements DashboardService {
         Map<String, List<Cuota>> cuotasPorSocio = cuotas.stream().collect(Collectors.groupingBy(Cuota::getSocioId));
 
         Instant inicioMesActual = FechaUtil.inicioDeMesActual();
+        Instant inicioAnioActual = FechaUtil.inicioDeAnioActual();
 
         long totalSocios = socios.size();
+        long sociosActivos = socios.stream().filter(s -> s.getEstado() == EstadoSocio.ACTIVO).count();
         long sociosNuevosEsteMes = socios.stream()
                 .filter(s -> s.getFechaAlta() != null && !s.getFechaAlta().isBefore(inicioMesActual))
+                .count();
+        long sociosNuevosEsteAnio = socios.stream()
+                .filter(s -> s.getFechaAlta() != null && !s.getFechaAlta().isBefore(inicioAnioActual))
                 .count();
 
         long alDia = 0;
@@ -156,7 +165,7 @@ public class DashboardServiceImpl implements DashboardService {
                 .count();
 
         return new IndicadoresPrincipalesResponse(
-                totalSocios, sociosNuevosEsteMes,
+                totalSocios, sociosActivos, sociosNuevosEsteMes, sociosNuevosEsteAnio,
                 alDia, porcentajeAlDia,
                 pendientes,
                 vencidos,
@@ -188,6 +197,52 @@ public class DashboardServiceImpl implements DashboardService {
             resultado.add(new CobranzaMensualResponse(periodo, FechaUtil.NOMBRES_MES[mes - 1], cobrado, pendiente));
         }
         return resultado;
+    }
+
+    @Override
+    public List<CobranzaMensualPorCategoriaResponse> obtenerCobranzaMensualPorCategoria(int anio) {
+        Map<String, List<Cuota>> cuotasPorPeriodo = cuotaRepository.findAll().stream()
+                .filter(c -> c.getEstado() == EstadoCuota.PAGADA)
+                .collect(Collectors.groupingBy(Cuota::getPeriodo));
+
+        List<CobranzaMensualPorCategoriaResponse> resultado = new ArrayList<>();
+        for (int mes = 1; mes <= 12; mes++) {
+            String periodo = YearMonth.of(anio, mes).toString();
+            List<Cuota> pagadasDelMes = cuotasPorPeriodo.getOrDefault(periodo, List.of());
+
+            BigDecimal cobradoActivo = sumaImporte(pagadasDelMes, CategoriaSocio.ACTIVO);
+            BigDecimal cobradoAdherente = sumaImporte(pagadasDelMes, CategoriaSocio.ADHERENTE);
+
+            resultado.add(new CobranzaMensualPorCategoriaResponse(
+                    periodo, FechaUtil.NOMBRES_MES[mes - 1], cobradoActivo, cobradoAdherente));
+        }
+        return resultado;
+    }
+
+    private BigDecimal sumaImporte(List<Cuota> cuotas, CategoriaSocio categoria) {
+        return cuotas.stream()
+                .filter(c -> c.getCategoria() == categoria)
+                .map(Cuota::getImporte)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    @Override
+    public List<SocioConDeudaResponse> obtenerSociosConDeuda() {
+        Map<String, List<Cuota>> vencidasPorSocio = cuotaRepository.findByEstado(EstadoCuota.VENCIDA).stream()
+                .collect(Collectors.groupingBy(Cuota::getSocioId));
+
+        return vencidasPorSocio.entrySet().stream()
+                .map(entry -> {
+                    Cuota primera = entry.getValue().get(0);
+                    BigDecimal montoAdeudado = entry.getValue().stream()
+                            .map(Cuota::getImporte)
+                            .reduce(BigDecimal.ZERO, BigDecimal::add);
+                    return new SocioConDeudaResponse(
+                            entry.getKey(), primera.getSocioNumeroSocio(), primera.getSocioNombre(),
+                            montoAdeudado, entry.getValue().size());
+                })
+                .sorted(Comparator.comparing(SocioConDeudaResponse::montoAdeudado).reversed())
+                .toList();
     }
 
     @Override

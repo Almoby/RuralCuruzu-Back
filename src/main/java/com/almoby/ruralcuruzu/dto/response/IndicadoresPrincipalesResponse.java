@@ -18,11 +18,18 @@ import java.math.BigDecimal;
  * - beneficiosUtilizados: usos DEL MES ACTUAL (HistorialBeneficio en estado
  *   USADO con fechaUso dentro del mes en curso). beneficiosUtilizadosHistoricoTotal
  *   es un dato adicional con el acumulado histórico completo.
+ * - sociosActivos: cantidad de socios con EstadoSocio.ACTIVO (a diferencia de
+ *   totalSocios, que cuenta TODOS los socios sin importar su estado).
+ * - sociosNuevosEsteAnio: altas (fechaAlta) desde el 1 de enero del año en
+ *   curso. Es la tarjeta "socios nuevos este año" de Reportes; distinta de
+ *   sociosNuevosEsteMes, que sigue disponible para otras pantallas.
  */
 public record IndicadoresPrincipalesResponse(
 
         long totalSocios,
+        long sociosActivos,
         long sociosNuevosEsteMes,
+        long sociosNuevosEsteAnio,
 
         long sociosConCuotaAlDia,
         double porcentajeAlDiaDelTotal,

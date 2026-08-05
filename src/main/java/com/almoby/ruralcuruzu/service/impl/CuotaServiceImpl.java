@@ -7,6 +7,8 @@ import java.time.YearMonth;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.List;
@@ -30,6 +32,7 @@ import com.almoby.ruralcuruzu.dto.request.AnularCuotaRequest;
 import com.almoby.ruralcuruzu.dto.request.InformarPagoCuotaRequest;
 import com.almoby.ruralcuruzu.dto.request.RegistrarPagoCuotaRequest;
 import com.almoby.ruralcuruzu.dto.request.RevisarPagoInformadoRequest;
+import com.almoby.ruralcuruzu.dto.response.CobranzaPorCategoriaResponse;
 import com.almoby.ruralcuruzu.dto.response.CuotaResponse;
 import com.almoby.ruralcuruzu.dto.response.CuotaResumenResponse;
 import com.almoby.ruralcuruzu.dto.response.EstadoCuentaSocioResponse;
@@ -50,6 +53,7 @@ import com.almoby.ruralcuruzu.enums.Rol;
 import com.almoby.ruralcuruzu.exception.ArchivoInvalidoException;
 import com.almoby.ruralcuruzu.exception.CuotaEstadoInvalidoException;
 import com.almoby.ruralcuruzu.exception.CuotaNoEncontradaException;
+import com.almoby.ruralcuruzu.exception.PagoNoEncontradoException;
 import com.almoby.ruralcuruzu.exception.SocioNoEncontradoException;
 import com.almoby.ruralcuruzu.repository.CuotaRepository;
 import com.almoby.ruralcuruzu.repository.EjecucionGeneracionCuotasRepository;
@@ -373,6 +377,12 @@ public class CuotaServiceImpl implements CuotaService {
     }
 
     @Override
+    public PagoResponse obtenerPagoPorId(String pagoId) {
+        return PagoResponse.from(pagoRepository.findById(pagoId)
+                .orElseThrow(() -> new PagoNoEncontradoException(pagoId)));
+    }
+
+    @Override
     public ResumenCuotasResponse obtenerResumen() {
         List<Cuota> todas = cuotaRepository.findAll();
         Map<String, Pago> pagoAprobadoPorCuota = pagoRepository.findByEstado(EstadoPago.APROBADO).stream()
@@ -391,7 +401,36 @@ public class CuotaServiceImpl implements CuotaService {
         long cantidadRechazadas = todas.stream().filter(cuota -> cuota.getEstado() == EstadoCuota.RECHAZADA).count();
 
         return new ResumenCuotasResponse(totalCobrado, totalEnRevision, totalCobradoEnEfectivo,
-                todas.size(), cantidadPendientes, cantidadAprobadas, cantidadRechazadas);
+                todas.size(), cantidadPendientes, cantidadAprobadas, cantidadRechazadas,
+                cobranzaPorCategoria(todas, pagoAprobadoPorCuota));
+    }
+
+    /**
+     * Desglose del total cobrado por categoría de socio (documento, sección
+     * Reportes): siempre trae una fila por cada valor de CategoriaSocio,
+     * aunque no tenga ninguna cuota (en cero), para que el gráfico del front
+     * no tenga huecos. Usa Cuota.categoria (denormalizado al generar la
+     * cuota, igual que socioNombre/numeroSocio), no hace falta ir a buscar
+     * el Socio.
+     *
+     * <p>OJO: esto es "cuánto se cobró de cuotas que en su momento eran de
+     * cada categoría", no "cuánto cobran hoy los socios que hoy son de cada
+     * categoría". Si un admin cambia la categoría de un socio después de
+     * generada una cuota, esa cuota vieja sigue contando para la categoría
+     * que tenía al generarse, no la actual (mismo criterio que el resto del
+     * sistema usa para los demás datos denormalizados de Cuota).
+     */
+    private List<CobranzaPorCategoriaResponse> cobranzaPorCategoria(List<Cuota> todas,
+                                                                      Map<String, Pago> pagoAprobadoPorCuota) {
+        return Arrays.stream(CategoriaSocio.values())
+                .map(categoria -> {
+                    List<Cuota> deLaCategoria = todas.stream()
+                            .filter(cuota -> cuota.getCategoria() == categoria)
+                            .toList();
+                    BigDecimal totalCobradoCategoria = sumaPagada(deLaCategoria, pagoAprobadoPorCuota, pago -> true);
+                    return new CobranzaPorCategoriaResponse(categoria, totalCobradoCategoria, deLaCategoria.size());
+                })
+                .toList();
     }
 
     /** "Pendientes" agrupa todo lo que todavía no se resolvió: recién generada, vencida o esperando revisión. */
@@ -529,6 +568,12 @@ public class CuotaServiceImpl implements CuotaService {
         cuota.setFechaActualizacion(ahora);
         cuotaRepository.save(cuota);
 
+        // Si había quedado un link de pago abandonado sin resolver (generado pero
+        // nunca pagado, ver generarLinkDePago), esta transferencia recién informada
+        // pasa a ser el único intento vigente: se cancela el resto para que no quede
+        // dando vueltas como "en revisión" en el panel del admin.
+        cancelarIntentosDePagoAbandonados(cuotaId, pago.getId(), ahora);
+
         log.info("Socio id={} informó un pago para cuota id={}", socioId, cuotaId);
 
         usuarioRepository.findByRol(Rol.ADMIN).forEach(admin -> emailService.enviarCorreoPagoInformado(
@@ -547,7 +592,11 @@ public class CuotaServiceImpl implements CuotaService {
                     "Solo se puede revisar una cuota en estado EN_REVISION (estado actual: " + cuota.getEstado() + ")");
         }
 
-        Pago pago = pagoRepository.findByCuotaIdAndEstado(cuotaId, EstadoPago.EN_REVISION)
+        // El más reciente EN_REVISION (no "el" EN_REVISION): puede haber más de uno si
+        // quedó un link de pago abandonado sin resolver (ver pagoVigentePara). El que
+        // el admin está revisando acá es siempre la transferencia recién informada,
+        // que es la más nueva.
+        Pago pago = pagoEnRevisionMasReciente(pagoRepository.findByCuotaId(cuotaId))
                 .orElseThrow(() -> new CuotaEstadoInvalidoException(
                         "No hay ningún pago en revisión para esta cuota"));
 
@@ -655,11 +704,12 @@ public class CuotaServiceImpl implements CuotaService {
         pago.setMercadoPagoPreferenceId(preferencia.preferenceId());
         pagoRepository.save(pago);
 
-        cuota.setEstado(EstadoCuota.EN_REVISION);
-        cuota.setMotivoRechazo(null);
-        cuota.setFechaActualizacion(ahora);
-        cuotaRepository.save(cuota);
-
+        // A diferencia de antes, generar el link NO bloquea la cuota: crear una
+        // preferencia no garantiza que el socio vaya a pagar (puede cerrar la
+        // pestaña sin hacer nada), así que la cuota sigue en su estado actual
+        // (PENDIENTE/VENCIDA/RECHAZADA, admite reintentar) hasta que Mercado Pago
+        // confirme por webhook que hay un intento real en curso (ver
+        // procesarNotificacionMercadoPago) o un resultado definitivo.
         log.info("Socio id={} generó un link de pago para cuota id={} pagoId={} preferenceId={}",
                 socioId, cuotaId, pago.getId(), preferencia.preferenceId());
 
@@ -714,31 +764,61 @@ public class CuotaServiceImpl implements CuotaService {
             pago.setFechaPago(ahora);
             pagoRepository.save(pago);
 
-            cuota.setEstado(EstadoCuota.PAGADA);
-            cuota.setFechaActualizacion(ahora);
-            cuotaRepository.save(cuota);
+            if (cuota.getEstado() == EstadoCuota.PAGADA) {
+                // Como generar un link ya no bloquea la cuota, el socio pudo haber
+                // tenido más de un intento en paralelo (ej. dos pestañas). Si otro
+                // intento distinto ya la había marcado PAGADA antes que este, no
+                // pisamos nada: solo dejamos un aviso para que el admin lo revise a
+                // mano (podría ser un pago duplicado a reintegrar).
+                log.warn("Pago id={} aprobado por Mercado Pago, pero la cuota id={} ya estaba PAGADA por otro "
+                        + "intento (posible pago duplicado, revisar manualmente)", pagoId, cuota.getId());
+            } else {
+                cuota.setEstado(EstadoCuota.PAGADA);
+                cuota.setMotivoRechazo(null);
+                cuota.setFechaActualizacion(ahora);
+                cuotaRepository.save(cuota);
+                notificarPagoRegistrado(cuota, pago);
+            }
 
             log.info("Mercado Pago aprobó el pago id={} de cuota id={}", pagoId, cuota.getId());
-            notificarPagoRegistrado(cuota, pago);
         } else if (estadoReal.rechazado()) {
             pago.setEstado(EstadoPago.RECHAZADO);
             pago.setFechaPago(ahora);
             pago.setMotivoRechazo("Pago rechazado por Mercado Pago");
             pagoRepository.save(pago);
 
-            // Igual que un rechazo de transferencia (RN-17): el socio puede
-            // volver a intentar, ya sea con un nuevo link de pago o transfiriendo.
-            cuota.setEstado(EstadoCuota.RECHAZADA);
-            cuota.setMotivoRechazo("Pago rechazado por Mercado Pago");
-            cuota.setFechaActualizacion(ahora);
-            cuotaRepository.save(cuota);
+            if (cuota.getEstado() == EstadoCuota.PAGADA) {
+                // Otro intento en paralelo ya la había pagado antes que este rechazo
+                // tardío llegara: la cuota queda como está (pagada), no la volvemos
+                // a abrir para reintentar.
+                log.info("Pago id={} rechazado por Mercado Pago, pero la cuota id={} ya estaba PAGADA por otro "
+                        + "intento; se ignora", pagoId, cuota.getId());
+            } else {
+                // Igual que un rechazo de transferencia (RN-17): el socio puede
+                // volver a intentar, ya sea con un nuevo link de pago o transfiriendo.
+                cuota.setEstado(EstadoCuota.RECHAZADA);
+                cuota.setMotivoRechazo("Pago rechazado por Mercado Pago");
+                cuota.setFechaActualizacion(ahora);
+                cuotaRepository.save(cuota);
+                notificarPagoRechazado(cuota);
+            }
 
             log.info("Mercado Pago rechazó el pago id={} de cuota id={}", pagoId, cuota.getId());
-            notificarPagoRechazado(cuota);
         } else {
-            // "pending" / "in_process": todavía no hay nada definitivo, solo se
-            // deja registrado el id de Mercado Pago para la próxima consulta.
+            // "pending" / "in_process": recién acá, con confirmación real de Mercado
+            // Pago de que hay un intento en curso (no al crear el link, que todavía
+            // no garantiza que el socio vaya a pagar), bloqueamos la cuota para que
+            // no se disparen intentos en paralelo mientras este se resuelve.
             pagoRepository.save(pago);
+            if (cuota.getEstado() != EstadoCuota.EN_REVISION && cuota.getEstado() != EstadoCuota.PAGADA) {
+                cuota.setEstado(EstadoCuota.EN_REVISION);
+                cuota.setMotivoRechazo(null);
+                cuota.setFechaActualizacion(ahora);
+                cuotaRepository.save(cuota);
+                // Este intento es el que pasa a estar en curso de verdad; cualquier otro
+                // link abandonado de la misma cuota (que nunca llegó a este punto) se cancela.
+                cancelarIntentosDePagoAbandonados(pago.getCuotaId(), pago.getId(), ahora);
+            }
             log.info("Pago id={} sigue pendiente en Mercado Pago (status={})", pagoId, estadoReal.status());
         }
     }
@@ -823,17 +903,71 @@ public class CuotaServiceImpl implements CuotaService {
     }
 
     /**
-     * El pago vigente de UNA cuota: el APROBADO si existe, si no el EN_REVISION,
-     * si no {@code null}. Para listados de varias cuotas usar
+     * El pago vigente de UNA cuota: el APROBADO si existe, si no el EN_REVISION
+     * más reciente, si no {@code null}. Para listados de varias cuotas usar
      * {@link #pagosVigentesPorCuotaId} (evita N+1).
+     *
+     * <p>"El EN_REVISION más reciente" (no "el EN_REVISION", a secas) porque desde
+     * que generar un link de pago dejó de bloquear la cuota (ver generarLinkDePago),
+     * puede haber más de un Pago EN_REVISION para la misma cuota al mismo tiempo
+     * (ej. dos links generados, uno abandonado sin resolver y otro recién creado):
+     * antes acá se usaba {@code findByCuotaIdAndEstado(..., EN_REVISION)}, que
+     * devuelve {@code Optional} y Spring Data tira
+     * {@code IncorrectResultSizeDataAccessException} apenas hay más de un resultado.
      */
     private Pago pagoVigentePara(String cuotaId) {
-        return pagoRepository.findByCuotaIdAndEstado(cuotaId, EstadoPago.APROBADO)
-                .or(() -> pagoRepository.findByCuotaIdAndEstado(cuotaId, EstadoPago.EN_REVISION))
+        return pagoVigentePara(pagoRepository.findByCuotaId(cuotaId));
+    }
+
+    private Pago pagoVigentePara(List<Pago> pagosDeLaCuota) {
+        // "El más reciente" en los dos casos, no "el primero que aparezca": en el
+        // caso normal solo hay un APROBADO por cuota (una vez PAGADA no se admiten
+        // más intentos), pero dos intentos en paralelo aprobados casi al mismo
+        // tiempo por Mercado Pago (ver procesarNotificacionMercadoPago) pueden dejar
+        // más de uno; determinismo acá evita que listarCuotas y obtenerCuotaPorId
+        // muestren "el vigente" distinto en cada llamada.
+        return pagosDeLaCuota.stream().filter(p -> p.getEstado() == EstadoPago.APROBADO)
+                .max(Comparator.comparing(Pago::getFechaCreacion))
+                .or(() -> pagoEnRevisionMasReciente(pagosDeLaCuota))
                 .orElse(null);
     }
 
-    /** Igual que {@link #pagoVigentePara}, pero para varias cuotas en una sola consulta. */
+    private Optional<Pago> pagoEnRevisionMasReciente(List<Pago> pagos) {
+        return pagos.stream()
+                .filter(p -> p.getEstado() == EstadoPago.EN_REVISION)
+                .max(Comparator.comparing(Pago::getFechaCreacion));
+    }
+
+    /**
+     * Cancela cualquier OTRO Pago que haya quedado EN_REVISION para la misma
+     * cuota (ej. un link de pago generado y nunca abierto/pagado) cuando un
+     * intento nuevo pasa a ser el vigente de verdad (informarPago, o Mercado
+     * Pago confirma por webhook que hay un link en curso). Es solo prolijidad
+     * de datos (que el admin no vea intentos fantasma "en revisión" para
+     * siempre): pagoVigentePara/revisarPagoInformado ya son seguros aunque
+     * esto no se llamara nunca, porque ya toman "el más reciente" en vez de
+     * asumir que hay uno solo.
+     */
+    private void cancelarIntentosDePagoAbandonados(String cuotaId, String pagoIdAConservar, Instant ahora) {
+        List<Pago> abandonados = pagoRepository.findByCuotaId(cuotaId).stream()
+                .filter(p -> p.getEstado() == EstadoPago.EN_REVISION)
+                .filter(p -> !p.getId().equals(pagoIdAConservar))
+                .toList();
+
+        for (Pago abandonado : abandonados) {
+            abandonado.setEstado(EstadoPago.RECHAZADO);
+            abandonado.setMotivoRechazo("Reemplazado por un intento de pago posterior");
+            abandonado.setFechaActualizacion(ahora);
+            pagoRepository.save(abandonado);
+        }
+
+        if (!abandonados.isEmpty()) {
+            log.info("Cancelado(s) {} intento(s) de pago abandonado(s) de la cuota id={}",
+                    abandonados.size(), cuotaId);
+        }
+    }
+
+    /** Igual que {@link #pagoVigentePara(String)}, pero para varias cuotas en una sola consulta. */
     private Map<String, Pago> pagosVigentesPorCuotaId(List<String> cuotaIds) {
         if (cuotaIds.isEmpty()) {
             return Map.of();
@@ -843,9 +977,10 @@ public class CuotaServiceImpl implements CuotaService {
 
         Map<String, Pago> resultado = new HashMap<>();
         pagosPorCuota.forEach((cuotaId, pagos) -> {
-            Optional<Pago> vigente = pagos.stream().filter(p -> p.getEstado() == EstadoPago.APROBADO).findFirst()
-                    .or(() -> pagos.stream().filter(p -> p.getEstado() == EstadoPago.EN_REVISION).findFirst());
-            vigente.ifPresent(pago -> resultado.put(cuotaId, pago));
+            Pago vigente = pagoVigentePara(pagos);
+            if (vigente != null) {
+                resultado.put(cuotaId, vigente);
+            }
         });
         return resultado;
     }

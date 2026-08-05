@@ -31,7 +31,7 @@ class ComprobantePagoPdfServiceImplTest {
     @Test
     void generarConstancia_pagoCompleto_devuelveUnPdfValido() {
         PagoResponse pago = new PagoResponse(
-                "pago-1", "cuota-1", "S-100", "Juan Pérez", "2026-07",
+                "pago-1", "cuota-1", "socio-1", "S-100", "Juan Pérez", "2026-07",
                 BigDecimal.valueOf(3500), MedioPago.VENTANILLA, EstadoPago.APROBADO,
                 Instant.now(), null, "Pago en efectivo en oficina", false,
                 "Admin Uno", null, Instant.now());
@@ -45,7 +45,7 @@ class ComprobantePagoPdfServiceImplTest {
     @Test
     void generarConstancia_pagoMercadoPagoConDatosNulos_noFalla() {
         PagoResponse pago = new PagoResponse(
-                "pago-2", "cuota-2", null, null, null,
+                "pago-2", "cuota-2", null, null, null, null,
                 null, MedioPago.LINK_DE_PAGO, EstadoPago.APROBADO,
                 null, null, null, true,
                 null, null, Instant.now());
@@ -62,7 +62,7 @@ class ComprobantePagoPdfServiceImplTest {
         // header date format before it moves to FechaUtil.FORMATO_FECHA_CORTA.
         // The unrelated local FORMATO_FECHA ("dd/MM/yyyy HH:mm") stays untouched.
         PagoResponse pago = new PagoResponse(
-                "pago-1", "cuota-1", "S-100", "Juan Pérez", "2026-07",
+                "pago-1", "cuota-1", "socio-1", "S-100", "Juan Pérez", "2026-07",
                 BigDecimal.valueOf(3500), MedioPago.VENTANILLA, EstadoPago.APROBADO,
                 Instant.now(), null, "Pago en efectivo en oficina", false,
                 "Admin Uno", null, Instant.now());

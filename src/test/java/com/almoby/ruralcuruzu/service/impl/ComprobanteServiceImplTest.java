@@ -56,7 +56,7 @@ class ComprobanteServiceImplTest {
 
     private PagoResponse pagoResponse(String id, String comprobanteRuta, EstadoPago estado, MedioPago medioPago,
                                        boolean informadoPorSocio) {
-        return new PagoResponse(id, "cuota-1", "S-100", "Juan Pérez", "2026-07",
+        return new PagoResponse(id, "cuota-1", "socio-1", "S-100", "Juan Pérez", "2026-07",
                 BigDecimal.valueOf(3500), medioPago, estado, Instant.now(), comprobanteRuta,
                 null, informadoPorSocio, "Admin Uno", null, Instant.now());
     }

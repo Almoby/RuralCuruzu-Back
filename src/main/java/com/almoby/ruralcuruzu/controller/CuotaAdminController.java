@@ -1,7 +1,12 @@
 package com.almoby.ruralcuruzu.controller;
 
+import java.nio.file.Path;
 import java.util.List;
 
+import org.springframework.core.io.FileSystemResource;
+import org.springframework.core.io.Resource;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -14,6 +19,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.almoby.ruralcuruzu.constantes.RutasApi;
+import com.almoby.ruralcuruzu.domain.Comprobante;
 import com.almoby.ruralcuruzu.dto.request.AnularCuotaRequest;
 import com.almoby.ruralcuruzu.dto.request.RegistrarPagoCuotaRequest;
 import com.almoby.ruralcuruzu.dto.request.RevisarPagoInformadoRequest;
@@ -21,13 +27,18 @@ import com.almoby.ruralcuruzu.dto.response.CuotaResponse;
 import com.almoby.ruralcuruzu.dto.response.CuotaResumenResponse;
 import com.almoby.ruralcuruzu.dto.response.EstadoCuentaSocioResponse;
 import com.almoby.ruralcuruzu.dto.response.GeneracionCuotasResponse;
+import com.almoby.ruralcuruzu.dto.response.PagoResponse;
 import com.almoby.ruralcuruzu.dto.response.RegistrarPagoResponse;
 import com.almoby.ruralcuruzu.dto.response.ResumenCuotasResponse;
 import com.almoby.ruralcuruzu.dto.response.RevisarPagoInformadoResponse;
 import com.almoby.ruralcuruzu.enums.EstadoCuota;
 import com.almoby.ruralcuruzu.exception.ApiErrorResponse;
+import com.almoby.ruralcuruzu.exception.ArchivoInvalidoException;
 import com.almoby.ruralcuruzu.security.AuthenticatedUser;
+import com.almoby.ruralcuruzu.service.AlmacenamientoComprobantesService;
+import com.almoby.ruralcuruzu.service.ComprobanteService;
 import com.almoby.ruralcuruzu.service.CuotaService;
+import com.almoby.ruralcuruzu.util.ArchivoDescargaUtil;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -51,9 +62,15 @@ import lombok.extern.slf4j.Slf4j;
 public class CuotaAdminController {
 
     private final CuotaService cuotaService;
+    private final ComprobanteService comprobanteService;
+    private final AlmacenamientoComprobantesService almacenamientoComprobantesService;
 
-    public CuotaAdminController(CuotaService cuotaService) {
+    public CuotaAdminController(CuotaService cuotaService,
+                                 ComprobanteService comprobanteService,
+                                 AlmacenamientoComprobantesService almacenamientoComprobantesService) {
         this.cuotaService = cuotaService;
+        this.comprobanteService = comprobanteService;
+        this.almacenamientoComprobantesService = almacenamientoComprobantesService;
     }
 
     @Operation(summary = "Generar cuotas manualmente",
@@ -106,8 +123,9 @@ public class CuotaAdminController {
 
     @Operation(summary = "Ver el resumen de cuotas",
             description = "Totales para las tarjetas y pestañas del panel: total cobrado, total en revisión, "
-                    + "total cobrado en efectivo, y cantidades por estado (todas, pendientes -incluye vencidas y "
-                    + "en revisión-, aprobadas, rechazadas).")
+                    + "total cobrado en efectivo, cantidades por estado (todas, pendientes -incluye vencidas y "
+                    + "en revisión-, aprobadas, rechazadas), y el desglose de cobranzaPorCategoria (una fila por "
+                    + "cada categoría de socio -ACTIVO/ADHERENTE-, aunque esté en cero) para el gráfico de Reportes.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Resumen calculado correctamente")
     })
@@ -199,5 +217,43 @@ public class CuotaAdminController {
             @AuthenticationPrincipal AuthenticatedUser admin) {
         log.info("PATCH /api/admin/cuotas/{}/anular - admin={}", id, admin.usuario().getEmail());
         return ResponseEntity.ok(cuotaService.anularCuota(id, request, admin.usuario().getId(), admin.usuario().getNombre()));
+    }
+
+    @Operation(summary = "Descargar el comprobante de un pago",
+            description = "Análogo a GET /api/socio/cuotas/pagos/{pagoId}/comprobante, pero sin la restricción de "
+                    + "que sea un pago propio: el admin puede descargar el comprobante de cualquier pago (real, si "
+                    + "el socio adjuntó uno al informar una transferencia; o una constancia en PDF, generada la "
+                    + "primera vez que hace falta, si el pago ya está APROBADO y no tiene ninguno).")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Comprobante (real o generado) encontrado"),
+            @ApiResponse(responseCode = "400", description = "Ese pago no tiene comprobante ni admite generar uno todavía (no está aprobado)",
+                    content = @Content(schema = @Schema(implementation = ApiErrorResponse.class))),
+            @ApiResponse(responseCode = "404", description = "No existe un pago con ese id",
+                    content = @Content(schema = @Schema(implementation = ApiErrorResponse.class)))
+    })
+    @GetMapping("/pagos/{pagoId}/comprobante")
+    public ResponseEntity<Resource> descargarComprobante(
+            @PathVariable String pagoId,
+            @AuthenticationPrincipal AuthenticatedUser admin) {
+        log.info("GET /api/admin/cuotas/pagos/{}/comprobante - admin={}", pagoId, admin.usuario().getEmail());
+
+        PagoResponse pago = cuotaService.obtenerPagoPorId(pagoId);
+
+        Comprobante comprobante = comprobanteService.obtenerOGenerarParaPago(pago, pago.socioId())
+                .orElseThrow(() -> new ArchivoInvalidoException("Ese pago no tiene comprobante adjunto"));
+
+        Path archivo = almacenamientoComprobantesService.resolverParaDescarga(comprobante.getRuta());
+        Resource recurso = new FileSystemResource(archivo);
+        MediaType contentType = comprobante.getContentType() != null
+                ? MediaType.parseMediaType(comprobante.getContentType())
+                : ArchivoDescargaUtil.tipoDeContenido(archivo);
+        String nombreDescarga = comprobante.getNombreArchivo() != null
+                ? comprobante.getNombreArchivo()
+                : ArchivoDescargaUtil.nombreParaDescarga(archivo);
+
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + nombreDescarga + "\"")
+                .contentType(contentType)
+                .body(recurso);
     }
 }

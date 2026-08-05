@@ -64,6 +64,13 @@ public interface CuotaService {
      */
     List<PagoResponse> listarPagosDeSocio(String socioId);
 
+    /**
+     * Detalle de un pago puntual, sin filtrar por socio (a diferencia de
+     * listarPagosDeSocio): uso administrativo, ej. para descargar el
+     * comprobante de cualquier pago desde el panel de admin.
+     */
+    PagoResponse obtenerPagoPorId(String pagoId);
+
     /** Totales para las tarjetas y pestañas del panel de Gestión de Cuotas (Figma). */
     ResumenCuotasResponse obtenerResumen();
 

@@ -14,8 +14,6 @@ public interface PagoRepository extends MongoRepository<Pago, String> {
 
     List<Pago> findByCuotaIdIn(List<String> cuotaIds);
 
-    Optional<Pago> findByCuotaIdAndEstado(String cuotaId, EstadoPago estado);
-
     List<Pago> findBySocioIdOrderByFechaCreacionDesc(String socioId);
 
     /** Usado por obtenerResumen: todos los pagos aprobados, para sumar totales sin ir cuota por cuota. */

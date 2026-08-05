@@ -47,9 +47,10 @@ public class ComercioDashboardController {
     }
 
     @Operation(summary = "Datos del Inicio",
-            description = "Indicadores (usos este mes, promociones activas, socios alcanzados histórico, "
-                    + "validaciones de hoy) y la serie semanal de usos (lunes a domingo, con 0 en los días sin "
-                    + "usos), en una sola llamada.")
+            description = "El estado de la propia cuenta del comercio (ACTIVO, INACTIVO, SUSPENDIDO, "
+                    + "DADO_DE_BAJA), indicadores (usos este mes, promociones activas, socios alcanzados "
+                    + "histórico, validaciones de hoy) y la serie semanal de usos (lunes a domingo, con 0 en los "
+                    + "días sin usos), en una sola llamada.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Datos obtenidos correctamente")
     })

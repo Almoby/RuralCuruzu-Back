@@ -21,9 +21,11 @@ import com.lowagie.text.pdf.PdfReader;
 import com.lowagie.text.pdf.parser.PdfTextExtractor;
 
 import com.almoby.ruralcuruzu.dto.response.BeneficioMasUtilizadoResponse;
+import com.almoby.ruralcuruzu.dto.response.CobranzaMensualPorCategoriaResponse;
 import com.almoby.ruralcuruzu.dto.response.CobranzaMensualResponse;
 import com.almoby.ruralcuruzu.dto.response.EstadoSociosResponse;
 import com.almoby.ruralcuruzu.dto.response.IndicadoresPrincipalesResponse;
+import com.almoby.ruralcuruzu.dto.response.SocioConDeudaResponse;
 import com.almoby.ruralcuruzu.dto.response.UsoBeneficioPorComercioResponse;
 import com.almoby.ruralcuruzu.dto.response.UsoPeriodoResponse;
 import com.almoby.ruralcuruzu.service.DashboardService;
@@ -39,7 +41,7 @@ class DashboardExportServiceImplTest {
 
     private IndicadoresPrincipalesResponse indicadores() {
         return new IndicadoresPrincipalesResponse(
-                10, 2,
+                10, 8, 2, 4,
                 6, 60.0,
                 3,
                 1,
@@ -56,7 +58,11 @@ class DashboardExportServiceImplTest {
         when(dashboardService.obtenerIndicadoresPrincipales()).thenReturn(indicadores());
         when(dashboardService.obtenerCobranzaMensual(anioActual)).thenReturn(List.of(
                 new CobranzaMensualResponse(anioActual + "-01", "Ene", new BigDecimal("500"), new BigDecimal("100"))));
+        when(dashboardService.obtenerCobranzaMensualPorCategoria(anioActual)).thenReturn(List.of(
+                new CobranzaMensualPorCategoriaResponse(anioActual + "-01", "Ene", new BigDecimal("400"), new BigDecimal("100"))));
         when(dashboardService.obtenerEstadoSocios(null, null)).thenReturn(new EstadoSociosResponse(6, 2, 1, 1));
+        when(dashboardService.obtenerSociosConDeuda()).thenReturn(List.of(
+                new SocioConDeudaResponse("s1", "SOC-1", "García, Juan", new BigDecimal("150"), 2)));
         when(dashboardService.obtenerUsoBeneficiosPorComercio()).thenReturn(List.of(
                 new UsoBeneficioPorComercioResponse("c1", "Farmacia", 10, 3, 2, "15% medicamentos",
                         List.of(new UsoPeriodoResponse(anioActual + "-01", 3L)))));
@@ -71,7 +77,9 @@ class DashboardExportServiceImplTest {
 
         verify(dashboardService).obtenerIndicadoresPrincipales();
         verify(dashboardService).obtenerCobranzaMensual(anioActual);
+        verify(dashboardService).obtenerCobranzaMensualPorCategoria(anioActual);
         verify(dashboardService).obtenerEstadoSocios(null, null);
+        verify(dashboardService).obtenerSociosConDeuda();
         verify(dashboardService).obtenerUsoBeneficiosPorComercio();
         verify(dashboardService).obtenerBeneficiosMasUtilizados();
     }
@@ -84,7 +92,9 @@ class DashboardExportServiceImplTest {
 
         when(dashboardService.obtenerIndicadoresPrincipales()).thenReturn(indicadores());
         when(dashboardService.obtenerCobranzaMensual(anioActual)).thenReturn(List.of());
+        when(dashboardService.obtenerCobranzaMensualPorCategoria(anioActual)).thenReturn(List.of());
         when(dashboardService.obtenerEstadoSocios(null, null)).thenReturn(new EstadoSociosResponse(0, 0, 0, 0));
+        when(dashboardService.obtenerSociosConDeuda()).thenReturn(List.of());
         when(dashboardService.obtenerUsoBeneficiosPorComercio()).thenReturn(List.of());
         when(dashboardService.obtenerBeneficiosMasUtilizados()).thenReturn(List.of());
 
@@ -103,7 +113,9 @@ class DashboardExportServiceImplTest {
 
         when(dashboardService.obtenerIndicadoresPrincipales()).thenReturn(indicadores());
         when(dashboardService.obtenerCobranzaMensual(anioActual)).thenReturn(List.of());
+        when(dashboardService.obtenerCobranzaMensualPorCategoria(anioActual)).thenReturn(List.of());
         when(dashboardService.obtenerEstadoSocios(null, null)).thenReturn(new EstadoSociosResponse(0, 0, 0, 0));
+        when(dashboardService.obtenerSociosConDeuda()).thenReturn(List.of());
         when(dashboardService.obtenerUsoBeneficiosPorComercio()).thenReturn(List.of());
         when(dashboardService.obtenerBeneficiosMasUtilizados()).thenReturn(List.of());
 

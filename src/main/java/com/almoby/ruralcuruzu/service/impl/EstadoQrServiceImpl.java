@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Optional;
 
 import org.springframework.stereotype.Service;
 
@@ -115,8 +116,24 @@ public class EstadoQrServiceImpl implements EstadoQrService {
         return cuotas.stream()
                 .filter(c -> c.getEstado() == EstadoCuota.PAGADA)
                 .max(Comparator.comparing(Cuota::getPeriodo))
-                .flatMap(c -> pagoRepository.findByCuotaIdAndEstado(c.getId(), EstadoPago.APROBADO))
+                .flatMap(c -> pagoAprobadoMasReciente(c.getId()))
                 .map(Pago::getFechaPago)
                 .orElse(null);
+    }
+
+    /**
+     * Normalmente hay un solo Pago APROBADO por cuota (una vez PAGADA no se
+     * admiten más intentos), pero dos intentos en paralelo (ej. dos links de
+     * pago) aprobados casi al mismo tiempo por Mercado Pago pueden dejar más de
+     * uno (ver CuotaServiceImpl.procesarNotificacionMercadoPago). Por eso acá se
+     * busca por cuotaId sin filtrar por estado en la consulta (findByCuotaId,
+     * lista, sin riesgo) y se filtra/desempata en memoria por el más reciente,
+     * en vez de findByCuotaIdAndEstado (Optional: tira
+     * IncorrectResultSizeDataAccessException apenas hay más de un resultado).
+     */
+    private Optional<Pago> pagoAprobadoMasReciente(String cuotaId) {
+        return pagoRepository.findByCuotaId(cuotaId).stream()
+                .filter(p -> p.getEstado() == EstadoPago.APROBADO)
+                .max(Comparator.comparing(Pago::getFechaCreacion));
     }
 }

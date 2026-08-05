@@ -40,4 +40,9 @@ public final class FechaUtil {
     public static Instant inicioDeHoy() {
         return LocalDate.now().atStartOfDay(ZoneId.systemDefault()).toInstant();
     }
+
+    /** Medianoche del 1 de enero del año actual, en la zona horaria del servidor. */
+    public static Instant inicioDeAnioActual() {
+        return LocalDate.now().withDayOfYear(1).atStartOfDay(ZoneId.systemDefault()).toInstant();
+    }
 }

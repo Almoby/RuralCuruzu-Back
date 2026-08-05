@@ -20,9 +20,11 @@ import com.almoby.ruralcuruzu.domain.Cuota;
 import com.almoby.ruralcuruzu.domain.HistorialBeneficio;
 import com.almoby.ruralcuruzu.domain.Socio;
 import com.almoby.ruralcuruzu.dto.response.BeneficioMasUtilizadoResponse;
+import com.almoby.ruralcuruzu.dto.response.CobranzaMensualPorCategoriaResponse;
 import com.almoby.ruralcuruzu.dto.response.CobranzaMensualResponse;
 import com.almoby.ruralcuruzu.dto.response.EstadoSociosResponse;
 import com.almoby.ruralcuruzu.dto.response.IndicadoresPrincipalesResponse;
+import com.almoby.ruralcuruzu.dto.response.SocioConDeudaResponse;
 import com.almoby.ruralcuruzu.dto.response.UsoBeneficioPorComercioResponse;
 import com.almoby.ruralcuruzu.enums.CategoriaSocio;
 import com.almoby.ruralcuruzu.enums.EstadoBeneficio;
@@ -80,6 +82,20 @@ class DashboardServiceImplTest {
                 .build();
     }
 
+    /** Como cuota(), pero con los datos denormalizados del socio (categoria, numeroSocio, nombre). */
+    private Cuota cuotaConDatosSocio(String socioId, String periodo, BigDecimal importe, EstadoCuota estado,
+                                      CategoriaSocio categoria, String numeroSocio, String nombre) {
+        return Cuota.builder()
+                .socioId(socioId)
+                .socioNumeroSocio(numeroSocio)
+                .socioNombre(nombre)
+                .periodo(periodo)
+                .importe(importe)
+                .categoria(categoria)
+                .estado(estado)
+                .build();
+    }
+
     private HistorialBeneficio historial(String comercioId, String comercioNombre, String socioId,
                                           String beneficioTitulo, EstadoUsoBeneficio estado, Instant fechaUso) {
         return historial(comercioId, comercioNombre, socioId, beneficioTitulo, beneficioTitulo, estado, fechaUso);
@@ -122,16 +138,20 @@ class DashboardServiceImplTest {
         assertThat(resultado.promocionesActivas()).isEqualTo(1); // solo "vigente", no "vencidoPeroActivo"
     }
 
-    // ---------- obtenerDashboardPrincipal (agrega las 5 secciones) ----------
+    // ---------- obtenerDashboardPrincipal (agrega las 7 secciones) ----------
 
     @Test
-    void obtenerDashboardPrincipal_bundleaLasCincoSeccionesConLosFiltrosCorrectos() {
+    void obtenerDashboardPrincipal_bundleaLasSieteSeccionesConLosFiltrosCorrectos() {
         Socio activo = socio("s1", EstadoSocio.ACTIVO, CategoriaSocio.ACTIVO, TipoPersona.FISICA, Instant.now());
         Socio adherente = socio("s2", EstadoSocio.ACTIVO, CategoriaSocio.ADHERENTE, TipoPersona.JURIDICA, Instant.now());
         when(socioRepository.findAll()).thenReturn(List.of(activo, adherente));
         when(cuotaRepository.findAll()).thenReturn(List.of(
-                cuota("s1", "2026-03", new BigDecimal("100"), EstadoCuota.PAGADA),
+                cuotaConDatosSocio("s1", "2026-03", new BigDecimal("100"), EstadoCuota.PAGADA,
+                        CategoriaSocio.ACTIVO, "SOC-s1", "García, Juan"),
                 cuota("s2", "2026-03", new BigDecimal("50"), EstadoCuota.PENDIENTE)));
+        when(cuotaRepository.findByEstado(EstadoCuota.VENCIDA)).thenReturn(List.of(
+                cuotaConDatosSocio("s2", "2026-02", new BigDecimal("75"), EstadoCuota.VENCIDA,
+                        CategoriaSocio.ADHERENTE, "SOC-s2", "Pérez, Ana")));
         when(comercioRepository.findByEstado(EstadoComercio.ACTIVO)).thenReturn(List.of());
         when(beneficioRepository.findByEstado(EstadoBeneficio.ACTIVO)).thenReturn(List.of());
         when(historialBeneficioRepository.findAll()).thenReturn(List.of(
@@ -148,8 +168,20 @@ class DashboardServiceImplTest {
         assertThat(respuesta.cobranzaMensual().stream().filter(c -> c.periodo().equals("2026-03")).findFirst()
                 .orElseThrow().cobrado()).isEqualByComparingTo("100");
 
+        // Cobranza mensual por categoría: la cuota PAGADA de marzo es ACTIVO.
+        assertThat(respuesta.cobranzaMensualPorCategoria()).hasSize(12);
+        var marzoPorCategoria = respuesta.cobranzaMensualPorCategoria().stream()
+                .filter(c -> c.periodo().equals("2026-03")).findFirst().orElseThrow();
+        assertThat(marzoPorCategoria.cobradoActivo()).isEqualByComparingTo("100");
+        assertThat(marzoPorCategoria.cobradoAdherente()).isEqualByComparingTo(BigDecimal.ZERO);
+
         // Estado de socios: acá sí se aplica el filtro (categoria=ACTIVO, tipoPersona=FISICA) => solo s1.
         assertThat(respuesta.estadoSocios().alDia()).isEqualTo(1);
+
+        // Socios con deuda: s2 tiene una cuota VENCIDA.
+        assertThat(respuesta.sociosConDeuda()).hasSize(1);
+        assertThat(respuesta.sociosConDeuda().get(0).nombre()).isEqualTo("Pérez, Ana");
+        assertThat(respuesta.sociosConDeuda().get(0).montoAdeudado()).isEqualByComparingTo("75");
 
         assertThat(respuesta.usoBeneficiosPorComercio()).hasSize(1);
         assertThat(respuesta.usoBeneficiosPorComercio().get(0).comercioNombre()).isEqualTo("Farmacia Del Sol");
@@ -185,6 +217,27 @@ class DashboardServiceImplTest {
         assertThat(resultado.sociosConCuotaPendiente()).isEqualTo(1);
         assertThat(resultado.sociosConCuotaVencida()).isEqualTo(1);
         // s4 (inactivo) no entra en ninguna de las 3 categorías
+    }
+
+    @Test
+    void indicadores_sociosActivosYNuevosEsteAnio_soloCuentanLoQueCorresponde() {
+        Instant esteAnio = Instant.now();
+        Instant anioPasado = Instant.now().minus(Duration.ofDays(400));
+        Socio activoNuevo = socio("s1", EstadoSocio.ACTIVO, CategoriaSocio.ACTIVO, TipoPersona.FISICA, esteAnio);
+        Socio activoViejo = socio("s2", EstadoSocio.ACTIVO, CategoriaSocio.ACTIVO, TipoPersona.FISICA, anioPasado);
+        Socio inactivoNuevo = socio("s3", EstadoSocio.INACTIVO, CategoriaSocio.ACTIVO, TipoPersona.FISICA, esteAnio);
+
+        when(socioRepository.findAll()).thenReturn(List.of(activoNuevo, activoViejo, inactivoNuevo));
+        when(cuotaRepository.findAll()).thenReturn(List.of());
+        when(comercioRepository.findByEstado(EstadoComercio.ACTIVO)).thenReturn(List.of());
+        when(beneficioRepository.findByEstado(EstadoBeneficio.ACTIVO)).thenReturn(List.of());
+        when(historialBeneficioRepository.findAll()).thenReturn(List.of());
+
+        IndicadoresPrincipalesResponse resultado = service().obtenerIndicadoresPrincipales();
+
+        assertThat(resultado.totalSocios()).isEqualTo(3);
+        assertThat(resultado.sociosActivos()).isEqualTo(2); // s1 y s2 (s3 está INACTIVO)
+        assertThat(resultado.sociosNuevosEsteAnio()).isEqualTo(2); // s1 y s3 (fechaAlta de este año), no s2
     }
 
     @Test
@@ -300,6 +353,75 @@ class DashboardServiceImplTest {
         assertThat(marzo.mes()).isEqualTo("Mar");
         assertThat(marzo.cobrado()).isEqualByComparingTo("500");
         assertThat(marzo.pendiente()).isEqualByComparingTo("300"); // 200 + 100, sin la anulada
+    }
+
+    // ---------- obtenerCobranzaMensualPorCategoria ----------
+
+    @Test
+    void cobranzaMensualPorCategoria_devuelveLos12MesesConCeroDondeNoHayDatos() {
+        int anio = YearMonth.now().getYear();
+        when(cuotaRepository.findAll()).thenReturn(List.of());
+
+        List<CobranzaMensualPorCategoriaResponse> resultado = service().obtenerCobranzaMensualPorCategoria(anio);
+
+        assertThat(resultado).hasSize(12);
+        assertThat(resultado.get(0).periodo()).isEqualTo(YearMonth.of(anio, 1).toString());
+        assertThat(resultado.get(0).cobradoActivo()).isEqualByComparingTo(BigDecimal.ZERO);
+        assertThat(resultado.get(0).cobradoAdherente()).isEqualByComparingTo(BigDecimal.ZERO);
+    }
+
+    @Test
+    void cobranzaMensualPorCategoria_separaActivoDeAdherenteEnElMesCorrecto() {
+        int anio = 2026;
+        when(cuotaRepository.findAll()).thenReturn(List.of(
+                cuotaConDatosSocio("s1", "2026-03", new BigDecimal("500"), EstadoCuota.PAGADA,
+                        CategoriaSocio.ACTIVO, "SOC-1", "García, Juan"),
+                cuotaConDatosSocio("s2", "2026-03", new BigDecimal("200"), EstadoCuota.PAGADA,
+                        CategoriaSocio.ADHERENTE, "SOC-2", "Pérez, Ana"),
+                // No pagada: no debería sumar a ninguna de las dos columnas.
+                cuotaConDatosSocio("s3", "2026-03", new BigDecimal("999"), EstadoCuota.PENDIENTE,
+                        CategoriaSocio.ACTIVO, "SOC-3", "López, Marta")));
+
+        List<CobranzaMensualPorCategoriaResponse> resultado = service().obtenerCobranzaMensualPorCategoria(anio);
+        CobranzaMensualPorCategoriaResponse marzo = resultado.get(2);
+
+        assertThat(marzo.mes()).isEqualTo("Mar");
+        assertThat(marzo.cobradoActivo()).isEqualByComparingTo("500");
+        assertThat(marzo.cobradoAdherente()).isEqualByComparingTo("200");
+    }
+
+    // ---------- obtenerSociosConDeuda ----------
+
+    @Test
+    void sociosConDeuda_sinCuotasVencidas_devuelveListaVacia() {
+        when(cuotaRepository.findByEstado(EstadoCuota.VENCIDA)).thenReturn(List.of());
+
+        assertThat(service().obtenerSociosConDeuda()).isEmpty();
+    }
+
+    @Test
+    void sociosConDeuda_agrupaPorSocioSumaElMontoYOrdenaDeMayorAMenor() {
+        when(cuotaRepository.findByEstado(EstadoCuota.VENCIDA)).thenReturn(List.of(
+                cuotaConDatosSocio("s1", "2026-01", new BigDecimal("50"), EstadoCuota.VENCIDA,
+                        CategoriaSocio.ACTIVO, "SOC-1", "García, Juan"),
+                cuotaConDatosSocio("s1", "2026-02", new BigDecimal("50"), EstadoCuota.VENCIDA,
+                        CategoriaSocio.ACTIVO, "SOC-1", "García, Juan"),
+                cuotaConDatosSocio("s2", "2026-01", new BigDecimal("200"), EstadoCuota.VENCIDA,
+                        CategoriaSocio.ADHERENTE, "SOC-2", "Pérez, Ana")));
+
+        List<SocioConDeudaResponse> resultado = service().obtenerSociosConDeuda();
+
+        assertThat(resultado).hasSize(2);
+        // s2 debe $200 (una sola cuota), va primero por deuda mayor a la de s1 ($100 en 2 cuotas).
+        assertThat(resultado.get(0).socioId()).isEqualTo("s2");
+        assertThat(resultado.get(0).nombre()).isEqualTo("Pérez, Ana");
+        assertThat(resultado.get(0).numeroSocio()).isEqualTo("SOC-2");
+        assertThat(resultado.get(0).montoAdeudado()).isEqualByComparingTo("200");
+        assertThat(resultado.get(0).cantidadCuotasVencidas()).isEqualTo(1);
+
+        assertThat(resultado.get(1).socioId()).isEqualTo("s1");
+        assertThat(resultado.get(1).montoAdeudado()).isEqualByComparingTo("100");
+        assertThat(resultado.get(1).cantidadCuotasVencidas()).isEqualTo(2);
     }
 
     // ---------- obtenerEstadoSocios ----------

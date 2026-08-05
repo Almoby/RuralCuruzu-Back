@@ -116,7 +116,7 @@ public class AuthServiceImpl implements AuthService {
             throw new UsuarioInactivoException();
         }
 
-        validarPerfilVinculadoActivo(usuario);
+        Socio socioVinculado = validarPerfilVinculadoActivo(usuario);
 
         String token = jwtService.generarToken(usuario);
         String refreshToken = refreshTokenService.generar(usuario.getId());
@@ -129,7 +129,9 @@ public class AuthServiceImpl implements AuthService {
                 usuario.getNombre(),
                 usuario.getRefId(),
                 jwtService.expiracionEnSegundos(),
-                usuario.isRequiereCambioPassword());
+                usuario.isRequiereCambioPassword(),
+                socioVinculado != null ? socioVinculado.getNumeroSocio() : null,
+                socioVinculado != null ? socioVinculado.getCategoria() : null);
     }
 
     /**
@@ -182,7 +184,7 @@ public class AuthServiceImpl implements AuthService {
             throw new UsuarioInactivoException();
         }
 
-        validarPerfilVinculadoActivo(usuario);
+        Socio socioVinculado = validarPerfilVinculadoActivo(usuario);
 
         String nuevoAccessToken = jwtService.generarToken(usuario);
         log.info("Access token renovado vía refresh para email={}", usuario.getEmail());
@@ -194,7 +196,9 @@ public class AuthServiceImpl implements AuthService {
                 usuario.getNombre(),
                 usuario.getRefId(),
                 jwtService.expiracionEnSegundos(),
-                usuario.isRequiereCambioPassword());
+                usuario.isRequiereCambioPassword(),
+                socioVinculado != null ? socioVinculado.getNumeroSocio() : null,
+                socioVinculado != null ? socioVinculado.getCategoria() : null);
     }
 
     @Override
@@ -289,17 +293,22 @@ public class AuthServiceImpl implements AuthService {
      * puede volverse INACTIVO/SUSPENDIDO/DADO_DE_BAJA de forma independiente
      * de la cuenta de acceso. Un ADMIN no tiene refId, así que no hay nada
      * que validar para ese rol.
+     *
+     * <p>Para SOCIO, devuelve el Socio ya validado (en vez de solo un
+     * booleano) para que login()/refrescarToken() puedan armar el
+     * LoginResponse con numeroSocio/categoria sin una segunda consulta a
+     * Mongo. Para COMERCIO o ADMIN devuelve null (LoginResponse no expone
+     * esos campos para esos roles).
      */
-    private void validarPerfilVinculadoActivo(Usuario usuario) {
+    private Socio validarPerfilVinculadoActivo(Usuario usuario) {
         if (usuario.getRol() == Rol.SOCIO) {
-            boolean socioActivo = socioRepository.findById(usuario.getRefId())
-                    .map(Socio::estaActivo)
-                    .orElse(false);
-            if (!socioActivo) {
+            Socio socio = socioRepository.findById(usuario.getRefId()).orElse(null);
+            if (socio == null || !socio.estaActivo()) {
                 log.warn("Login rechazado: el socio vinculado (refId={}) no está activo o ya no existe",
                         usuario.getRefId());
                 throw new UsuarioInactivoException();
             }
+            return socio;
         } else if (usuario.getRol() == Rol.COMERCIO) {
             boolean comercioActivo = comercioRepository.findById(usuario.getRefId())
                     .map(Comercio::estaActivo)
@@ -310,6 +319,7 @@ public class AuthServiceImpl implements AuthService {
                 throw new UsuarioInactivoException();
             }
         }
+        return null;
     }
 
     private String normalizarEmail(String email) {

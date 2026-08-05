@@ -1,6 +1,7 @@
 package com.almoby.ruralcuruzu.service.impl;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
@@ -11,6 +12,7 @@ import java.time.Year;
 import java.time.YearMonth;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.Optional;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -19,14 +21,18 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.almoby.ruralcuruzu.domain.Beneficio;
+import com.almoby.ruralcuruzu.domain.Comercio;
 import com.almoby.ruralcuruzu.domain.HistorialBeneficio;
 import com.almoby.ruralcuruzu.dto.response.EstadisticasComercioResponse;
 import com.almoby.ruralcuruzu.dto.response.InicioComercioResponse;
 import com.almoby.ruralcuruzu.dto.response.UsoDiaSemanaResponse;
 import com.almoby.ruralcuruzu.dto.response.UsoMensualResponse;
 import com.almoby.ruralcuruzu.enums.EstadoBeneficio;
+import com.almoby.ruralcuruzu.enums.EstadoComercio;
 import com.almoby.ruralcuruzu.enums.EstadoUsoBeneficio;
+import com.almoby.ruralcuruzu.exception.ComercioNoEncontradoException;
 import com.almoby.ruralcuruzu.repository.BeneficioRepository;
+import com.almoby.ruralcuruzu.repository.ComercioRepository;
 import com.almoby.ruralcuruzu.repository.HistorialBeneficioRepository;
 
 /**
@@ -41,6 +47,8 @@ import com.almoby.ruralcuruzu.repository.HistorialBeneficioRepository;
 class ComercioDashboardServiceImplTest {
 
     @Mock
+    private ComercioRepository comercioRepository;
+    @Mock
     private BeneficioRepository beneficioRepository;
     @Mock
     private HistorialBeneficioRepository historialBeneficioRepository;
@@ -49,7 +57,11 @@ class ComercioDashboardServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        service = new ComercioDashboardServiceImpl(beneficioRepository, historialBeneficioRepository);
+        service = new ComercioDashboardServiceImpl(comercioRepository, beneficioRepository, historialBeneficioRepository);
+    }
+
+    private Comercio comercio(EstadoComercio estado) {
+        return Comercio.builder().id("comercio-1").estado(estado).build();
     }
 
     private Beneficio beneficio(EstadoBeneficio estado) {
@@ -80,6 +92,7 @@ class ComercioDashboardServiceImplTest {
 
     @Test
     void obtenerInicio_calculaIndicadoresYSerieSemanalEnUnaSolaConsultaDeHistorial() {
+        when(comercioRepository.findById("comercio-1")).thenReturn(Optional.of(comercio(EstadoComercio.ACTIVO)));
         when(beneficioRepository.findByComercioId("comercio-1")).thenReturn(List.of(
                 beneficio(EstadoBeneficio.ACTIVO), beneficio(EstadoBeneficio.INACTIVO)));
 
@@ -102,6 +115,7 @@ class ComercioDashboardServiceImplTest {
 
         InicioComercioResponse respuesta = service.obtenerInicio("comercio-1");
 
+        assertThat(respuesta.estado()).isEqualTo(EstadoComercio.ACTIVO);
         assertThat(respuesta.indicadores().promocionesActivas()).isEqualTo(1L);
         assertThat(respuesta.indicadores().usosEsteMes()).isEqualTo(2L);
         assertThat(respuesta.indicadores().validacionesHoy()).isEqualTo(2L);
@@ -123,6 +137,7 @@ class ComercioDashboardServiceImplTest {
 
     @Test
     void obtenerInicio_sinUsosRegistrados_devuelveIndicadoresEnCeroYLos7DiasEnCero() {
+        when(comercioRepository.findById("comercio-1")).thenReturn(Optional.of(comercio(EstadoComercio.ACTIVO)));
         when(beneficioRepository.findByComercioId("comercio-1")).thenReturn(List.of());
         when(historialBeneficioRepository.findByComercioIdAndFechaUsoAfter(eq("comercio-1"), any(Instant.class)))
                 .thenReturn(List.of());
@@ -136,6 +151,27 @@ class ComercioDashboardServiceImplTest {
         assertThat(respuesta.indicadores().validacionesHoy()).isZero();
         assertThat(respuesta.usosPorDia()).hasSize(7);
         assertThat(respuesta.usosPorDia().stream().allMatch(r -> r.cantidad() == 0L)).isTrue();
+    }
+
+    @Test
+    void obtenerInicio_comercioSuspendido_devuelveElEstadoParaQueElFrontMuestreElAviso() {
+        when(comercioRepository.findById("comercio-1")).thenReturn(Optional.of(comercio(EstadoComercio.SUSPENDIDO)));
+        when(beneficioRepository.findByComercioId("comercio-1")).thenReturn(List.of());
+        when(historialBeneficioRepository.findByComercioIdAndFechaUsoAfter(eq("comercio-1"), any(Instant.class)))
+                .thenReturn(List.of());
+        when(historialBeneficioRepository.findByComercioId("comercio-1")).thenReturn(List.of());
+
+        InicioComercioResponse respuesta = service.obtenerInicio("comercio-1");
+
+        assertThat(respuesta.estado()).isEqualTo(EstadoComercio.SUSPENDIDO);
+    }
+
+    @Test
+    void obtenerInicio_comercioInexistente_lanzaExcepcion() {
+        when(comercioRepository.findById("no-existe")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.obtenerInicio("no-existe"))
+                .isInstanceOf(ComercioNoEncontradoException.class);
     }
 
     // ---------- obtenerEstadisticas ----------
