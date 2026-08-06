@@ -5,6 +5,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -38,8 +39,12 @@ class JwtAuthenticationFilterTest {
     @Mock
     private TokenRevocadoService tokenRevocadoService;
 
-    private final JwtAuthenticationFilter filter =
-            new JwtAuthenticationFilter(jwtService, userDetailsService, tokenRevocadoService);
+    private JwtAuthenticationFilter filter;
+
+    @BeforeEach
+    void crearFiltro() {
+        filter = new JwtAuthenticationFilter(jwtService, userDetailsService, tokenRevocadoService);
+    }
 
     @AfterEach
     void limpiarContexto() {

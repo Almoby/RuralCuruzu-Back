@@ -80,7 +80,10 @@ public class NotificacionSseServiceImpl implements NotificacionSseService {
         for (SseEmitter emitter : List.copyOf(emitters)) {
             try {
                 emitter.send(SseEmitter.event().name("notificacion").data(notificacion));
-            } catch (IOException ex) {
+            } catch (IOException | IllegalStateException ex) {
+                // IllegalStateException: el emitter ya se completó (ej. onCompletion todavía
+                // no corrió porque el request nunca se llegó a inicializar del todo) pero
+                // sigue en el registro; lo tratamos igual que una conexión caída.
                 quitar(usuarioId, emitter);
             }
         }
