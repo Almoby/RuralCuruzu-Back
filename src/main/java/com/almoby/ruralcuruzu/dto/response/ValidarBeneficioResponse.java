@@ -5,7 +5,6 @@ import java.time.Instant;
 
 import com.almoby.ruralcuruzu.domain.HistorialBeneficio;
 import com.almoby.ruralcuruzu.enums.CategoriaSocio;
-import com.almoby.ruralcuruzu.enums.TipoBeneficio;
 
 /** Confirmación que ve el comercio tras escanear y validar el QR de un socio. */
 public record ValidarBeneficioResponse(
@@ -15,7 +14,7 @@ public record ValidarBeneficioResponse(
         String socioNumeroSocio,
         CategoriaSocio socioCategoria,
         String beneficioTitulo,
-        TipoBeneficio beneficioTipo,
+        String beneficioTipoNombre,
         String beneficioValor,
         BigDecimal montoAhorro,
         Instant fechaUso
@@ -29,7 +28,7 @@ public record ValidarBeneficioResponse(
                 historial.getSocioNumeroSocio(),
                 historial.getSocioCategoria(),
                 historial.getBeneficioTitulo(),
-                historial.getTipo(),
+                historial.getTipoBeneficioNombre(),
                 historial.getValor(),
                 historial.getMontoAhorro(),
                 historial.getFechaUso());

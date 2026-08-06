@@ -9,7 +9,6 @@ import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.mongodb.core.mapping.Field;
 
 import com.almoby.ruralcuruzu.enums.EstadoBeneficio;
-import com.almoby.ruralcuruzu.enums.TipoBeneficio;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -51,8 +50,19 @@ public class Beneficio {
     @Field("descripcion")
     private String descripcion;
 
-    @Field("tipo")
-    private TipoBeneficio tipo;
+    /**
+     * Referencia a {@link TipoBeneficioCatalogo#getId()} (catálogo administrable
+     * por el admin, reemplaza al viejo enum TipoBeneficio fijo). {@code
+     * tipoBeneficioNombre} viaja denormalizado, igual que comercioNombre acá
+     * arriba: si el admin renombra o desactiva el tipo después, este beneficio
+     * sigue mostrando el nombre que tenía al crearse/editarse, hasta la
+     * próxima edición.
+     */
+    @Field("tipo_beneficio_id")
+    private String tipoBeneficioId;
+
+    @Field("tipo_beneficio_nombre")
+    private String tipoBeneficioNombre;
 
     /** Texto para el badge (ej. "15%", "2x1", "Gratis"): lo carga el comercio, no se calcula. */
     @Field("valor")

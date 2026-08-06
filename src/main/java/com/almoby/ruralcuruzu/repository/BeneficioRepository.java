@@ -28,4 +28,7 @@ public interface BeneficioRepository extends MongoRepository<Beneficio, String> 
 
     /** Usado al eliminar un comercio: sus beneficios se borran en cascada (ver ComercioServiceImpl.eliminarComercio). */
     void deleteByComercioId(String comercioId);
+
+    /** Usado por TipoBeneficioCatalogoServiceImpl.eliminar para bloquear el borrado de un tipo en uso. */
+    boolean existsByTipoBeneficioId(String tipoBeneficioId);
 }

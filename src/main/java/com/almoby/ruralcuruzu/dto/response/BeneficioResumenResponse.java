@@ -3,7 +3,6 @@ package com.almoby.ruralcuruzu.dto.response;
 import java.time.LocalDate;
 
 import com.almoby.ruralcuruzu.domain.Beneficio;
-import com.almoby.ruralcuruzu.enums.TipoBeneficio;
 
 /** Fila para el listado de "Beneficios y Comercios" del socio (Figma, sección 14). */
 public record BeneficioResumenResponse(
@@ -14,7 +13,8 @@ public record BeneficioResumenResponse(
         String comercioRubro,
         String titulo,
         String descripcion,
-        TipoBeneficio tipo,
+        String tipoBeneficioId,
+        String tipoBeneficioNombre,
         String valor,
         LocalDate fechaFinVigencia
 
@@ -28,7 +28,8 @@ public record BeneficioResumenResponse(
                 beneficio.getComercioRubro(),
                 beneficio.getTitulo(),
                 beneficio.getDescripcion(),
-                beneficio.getTipo(),
+                beneficio.getTipoBeneficioId(),
+                beneficio.getTipoBeneficioNombre(),
                 beneficio.getValor(),
                 beneficio.getFechaFinVigencia());
     }

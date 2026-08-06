@@ -12,6 +12,7 @@ import org.springframework.security.web.authentication.WebAuthenticationDetailsS
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
+import com.almoby.ruralcuruzu.constantes.RutasApi;
 import com.almoby.ruralcuruzu.service.TokenRevocadoService;
 
 import jakarta.servlet.FilterChain;
@@ -90,6 +91,21 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         String header = request.getHeader("Authorization");
         if (header != null && header.startsWith(PREFIJO_BEARER)) {
             return header.substring(PREFIJO_BEARER.length());
+        }
+        // Excepción puntual: un EventSource nativo del browser (usado para el stream
+        // SSE de notificaciones en tiempo real) no puede mandar headers custom, así
+        // que ahí SÍ se acepta el token por query param. Se compara la ruta exacta a
+        // propósito (no un prefijo ni "cualquier GET"), para no debilitar el resto de
+        // la API: ninguna otra ruta admite el token fuera del header Authorization.
+        // Trade-off aceptado conscientemente: es el mismo JWT de sesión (mismos
+        // permisos/expiración que en el header) viajando en la URL, lo que puede
+        // quedar en logs de acceso de servidor/proxy. Se acepta porque es la única
+        // forma de autenticar un EventSource nativo sin sumar otra librería, y el
+        // canal es de solo lectura (no habilita ninguna acción nueva). Además, hacer
+        // logout no corta las conexiones SSE ya abiertas con ese token: el filtro
+        // valida una sola vez, al abrir la conexión.
+        if (RutasApi.NOTIFICACIONES_STREAM.equals(request.getRequestURI())) {
+            return request.getParameter("token");
         }
         return null;
     }

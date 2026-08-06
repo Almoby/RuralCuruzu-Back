@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -28,6 +29,7 @@ import com.almoby.ruralcuruzu.domain.Comercio;
 import com.almoby.ruralcuruzu.domain.DatosPersonaFisica;
 import com.almoby.ruralcuruzu.domain.HistorialBeneficio;
 import com.almoby.ruralcuruzu.domain.Socio;
+import com.almoby.ruralcuruzu.domain.TipoBeneficioCatalogo;
 import com.almoby.ruralcuruzu.dto.request.ActualizarBeneficioRequest;
 import com.almoby.ruralcuruzu.dto.request.CambiarEstadoBeneficioRequest;
 import com.almoby.ruralcuruzu.dto.request.CrearBeneficioRequest;
@@ -44,7 +46,6 @@ import com.almoby.ruralcuruzu.enums.EstadoComercio;
 import com.almoby.ruralcuruzu.enums.EstadoQr;
 import com.almoby.ruralcuruzu.enums.EstadoSocio;
 import com.almoby.ruralcuruzu.enums.EstadoUsoBeneficio;
-import com.almoby.ruralcuruzu.enums.TipoBeneficio;
 import com.almoby.ruralcuruzu.enums.TipoPersona;
 import com.almoby.ruralcuruzu.exception.BeneficioNoEncontradoException;
 import com.almoby.ruralcuruzu.exception.BeneficioNoVigenteException;
@@ -53,10 +54,12 @@ import com.almoby.ruralcuruzu.exception.CodigoQrExpiradoException;
 import com.almoby.ruralcuruzu.exception.CodigoQrInvalidoException;
 import com.almoby.ruralcuruzu.exception.ComercioNoEncontradoException;
 import com.almoby.ruralcuruzu.exception.QrNoValidoException;
+import com.almoby.ruralcuruzu.exception.TipoBeneficioInvalidoException;
 import com.almoby.ruralcuruzu.repository.BeneficioRepository;
 import com.almoby.ruralcuruzu.repository.ComercioRepository;
 import com.almoby.ruralcuruzu.repository.HistorialBeneficioRepository;
 import com.almoby.ruralcuruzu.repository.SocioRepository;
+import com.almoby.ruralcuruzu.repository.TipoBeneficioCatalogoRepository;
 import com.almoby.ruralcuruzu.security.jwt.QrTokenService;
 import com.almoby.ruralcuruzu.service.EstadoQrService;
 
@@ -75,13 +78,27 @@ class BeneficioServiceImplTest {
     private EstadoQrService estadoQrService;
     @Mock
     private QrTokenService qrTokenService;
+    @Mock
+    private TipoBeneficioCatalogoRepository tipoBeneficioCatalogoRepository;
 
     private BeneficioServiceImpl service;
 
     @BeforeEach
     void setUp() {
         service = new BeneficioServiceImpl(beneficioRepository, historialBeneficioRepository, comercioRepository,
-                socioRepository, estadoQrService, qrTokenService);
+                socioRepository, estadoQrService, qrTokenService, tipoBeneficioCatalogoRepository);
+        // Default: "tipo-1" resuelve a un tipo activo, salvo que un test lo pise (evita
+        // repetir este stub en cada test de crear/actualizar que no lo pone a prueba).
+        lenient().when(tipoBeneficioCatalogoRepository.findById("tipo-1")).thenReturn(Optional.of(tipoBeneficioActivo()));
+    }
+
+    private TipoBeneficioCatalogo tipoBeneficioActivo() {
+        return TipoBeneficioCatalogo.builder()
+                .id("tipo-1")
+                .codigo("DESCUENTO_PORCENTAJE")
+                .nombre("Descuento por porcentaje")
+                .activo(true)
+                .build();
     }
 
     private Comercio comercio() {
@@ -106,7 +123,8 @@ class BeneficioServiceImplTest {
                 .comercioRubro("Farmacia")
                 .titulo("15% en medicamentos")
                 .descripcion("Descuento en toda la línea de medicamentos de venta libre")
-                .tipo(TipoBeneficio.DESCUENTO_PORCENTAJE)
+                .tipoBeneficioId("tipo-1")
+                .tipoBeneficioNombre("Descuento por porcentaje")
                 .valor("15%")
                 .estado(EstadoBeneficio.ACTIVO)
                 .fechaCreacion(Instant.now())
@@ -135,7 +153,7 @@ class BeneficioServiceImplTest {
         when(beneficioRepository.save(any(Beneficio.class))).thenAnswer(inv -> inv.getArgument(0));
 
         CrearBeneficioRequest request = new CrearBeneficioRequest(
-                "15% en medicamentos", "Descuento en venta libre", TipoBeneficio.DESCUENTO_PORCENTAJE, "15%",
+                "15% en medicamentos", "Descuento en venta libre", "tipo-1", "15%",
                 null, LocalDate.of(2026, 12, 31));
 
         BeneficioCreadoResponse response = service.crearBeneficio("comercio-1", request);
@@ -152,7 +170,7 @@ class BeneficioServiceImplTest {
         when(beneficioRepository.save(any(Beneficio.class))).thenAnswer(inv -> inv.getArgument(0));
 
         CrearBeneficioRequest request = new CrearBeneficioRequest(
-                "15% en medicamentos", "Descuento en venta libre", TipoBeneficio.DESCUENTO_PORCENTAJE, "15%",
+                "15% en medicamentos", "Descuento en venta libre", "tipo-1", "15%",
                 LocalDate.now().plusDays(7), null);
 
         BeneficioCreadoResponse response = service.crearBeneficio("comercio-1", request);
@@ -170,10 +188,38 @@ class BeneficioServiceImplTest {
         when(comercioRepository.findById("no-existe")).thenReturn(Optional.empty());
 
         CrearBeneficioRequest request = new CrearBeneficioRequest(
-                "titulo", "desc", TipoBeneficio.GRATIS, "Gratis", null, null);
+                "titulo", "desc", "tipo-1", "Gratis", null, null);
 
         assertThatThrownBy(() -> service.crearBeneficio("no-existe", request))
                 .isInstanceOf(ComercioNoEncontradoException.class);
+    }
+
+    @Test
+    void crearBeneficio_tipoBeneficioInexistente_lanzaExcepcion() {
+        when(comercioRepository.findById("comercio-1")).thenReturn(Optional.of(comercio()));
+        when(tipoBeneficioCatalogoRepository.findById("no-existe")).thenReturn(Optional.empty());
+
+        CrearBeneficioRequest request = new CrearBeneficioRequest(
+                "titulo", "desc", "no-existe", "Gratis", null, null);
+
+        assertThatThrownBy(() -> service.crearBeneficio("comercio-1", request))
+                .isInstanceOf(TipoBeneficioInvalidoException.class);
+        verify(beneficioRepository, never()).save(any(Beneficio.class));
+    }
+
+    @Test
+    void crearBeneficio_tipoBeneficioInactivo_lanzaExcepcion() {
+        when(comercioRepository.findById("comercio-1")).thenReturn(Optional.of(comercio()));
+        TipoBeneficioCatalogo inactivo = TipoBeneficioCatalogo.builder()
+                .id("tipo-inactivo").codigo("VIEJO").nombre("Viejo").activo(false).build();
+        when(tipoBeneficioCatalogoRepository.findById("tipo-inactivo")).thenReturn(Optional.of(inactivo));
+
+        CrearBeneficioRequest request = new CrearBeneficioRequest(
+                "titulo", "desc", "tipo-inactivo", "Gratis", null, null);
+
+        assertThatThrownBy(() -> service.crearBeneficio("comercio-1", request))
+                .isInstanceOf(TipoBeneficioInvalidoException.class);
+        verify(beneficioRepository, never()).save(any(Beneficio.class));
     }
 
     // ---------- listar / obtener / actualizar / cambiar estado (ownership) ----------
@@ -213,7 +259,7 @@ class BeneficioServiceImplTest {
         when(beneficioRepository.save(any(Beneficio.class))).thenAnswer(inv -> inv.getArgument(0));
 
         ActualizarBeneficioRequest request = new ActualizarBeneficioRequest(
-                "20% en medicamentos", "nueva desc", TipoBeneficio.DESCUENTO_PORCENTAJE, "20%", null, null);
+                "20% en medicamentos", "nueva desc", "tipo-1", "20%", null, null);
 
         BeneficioResponse response = service.actualizarBeneficio("comercio-1", "beneficio-1", request);
 
@@ -230,7 +276,7 @@ class BeneficioServiceImplTest {
         when(beneficioRepository.save(any(Beneficio.class))).thenAnswer(inv -> inv.getArgument(0));
 
         ActualizarBeneficioRequest request = new ActualizarBeneficioRequest(
-                "15% en medicamentos", "desc", TipoBeneficio.DESCUENTO_PORCENTAJE, "15%",
+                "15% en medicamentos", "desc", "tipo-1", "15%",
                 null, LocalDate.now().plusDays(30));
 
         BeneficioResponse response = service.actualizarBeneficio("comercio-1", "beneficio-1", request);
@@ -248,7 +294,7 @@ class BeneficioServiceImplTest {
         when(beneficioRepository.save(any(Beneficio.class))).thenAnswer(inv -> inv.getArgument(0));
 
         ActualizarBeneficioRequest request = new ActualizarBeneficioRequest(
-                "15% en medicamentos", "desc", TipoBeneficio.DESCUENTO_PORCENTAJE, "15%",
+                "15% en medicamentos", "desc", "tipo-1", "15%",
                 null, LocalDate.now().plusDays(60));
 
         BeneficioResponse response = service.actualizarBeneficio("comercio-1", "beneficio-1", request);
@@ -269,7 +315,7 @@ class BeneficioServiceImplTest {
         when(beneficioRepository.save(any(Beneficio.class))).thenAnswer(inv -> inv.getArgument(0));
 
         ActualizarBeneficioRequest request = new ActualizarBeneficioRequest(
-                "15% en medicamentos", "desc", TipoBeneficio.DESCUENTO_PORCENTAJE, "15%",
+                "15% en medicamentos", "desc", "tipo-1", "15%",
                 null, LocalDate.now().plusDays(30));
 
         BeneficioResponse response = service.actualizarBeneficio("comercio-1", "beneficio-1", request);
@@ -286,7 +332,7 @@ class BeneficioServiceImplTest {
         when(beneficioRepository.save(any(Beneficio.class))).thenAnswer(inv -> inv.getArgument(0));
 
         ActualizarBeneficioRequest request = new ActualizarBeneficioRequest(
-                "15% en medicamentos", "desc", TipoBeneficio.DESCUENTO_PORCENTAJE, "15%",
+                "15% en medicamentos", "desc", "tipo-1", "15%",
                 LocalDate.now(), null); // adelantan el inicio a hoy
 
         BeneficioResponse response = service.actualizarBeneficio("comercio-1", "beneficio-1", request);
@@ -301,7 +347,7 @@ class BeneficioServiceImplTest {
         when(beneficioRepository.save(any(Beneficio.class))).thenAnswer(inv -> inv.getArgument(0));
 
         ActualizarBeneficioRequest request = new ActualizarBeneficioRequest(
-                "15% en medicamentos", "desc", TipoBeneficio.DESCUENTO_PORCENTAJE, "15%",
+                "15% en medicamentos", "desc", "tipo-1", "15%",
                 LocalDate.now().plusDays(7), null); // atrasan el inicio a la semana que viene
 
         BeneficioResponse response = service.actualizarBeneficio("comercio-1", "beneficio-1", request);
@@ -319,7 +365,7 @@ class BeneficioServiceImplTest {
         when(beneficioRepository.save(any(Beneficio.class))).thenAnswer(inv -> inv.getArgument(0));
 
         ActualizarBeneficioRequest request = new ActualizarBeneficioRequest(
-                "15% en medicamentos", "desc", TipoBeneficio.DESCUENTO_PORCENTAJE, "15%",
+                "15% en medicamentos", "desc", "tipo-1", "15%",
                 null, null); // fechas que lo dejarían vigente hoy si no estuviera pausado
 
         BeneficioResponse response = service.actualizarBeneficio("comercio-1", "beneficio-1", request);
@@ -389,7 +435,7 @@ class BeneficioServiceImplTest {
         assertThat(response.socioNumeroSocio()).isEqualTo("SOC-000001");
         assertThat(response.socioCategoria()).isEqualTo(CategoriaSocio.ACTIVO);
         assertThat(response.beneficioTitulo()).isEqualTo("15% en medicamentos");
-        assertThat(response.beneficioTipo()).isEqualTo(TipoBeneficio.DESCUENTO_PORCENTAJE);
+        assertThat(response.beneficioTipoNombre()).isEqualTo("Descuento por porcentaje");
         assertThat(response.beneficioValor()).isEqualTo("15%");
         assertThat(response.montoAhorro()).isEqualByComparingTo("450.00");
 
@@ -574,7 +620,7 @@ class BeneficioServiceImplTest {
         HistorialBeneficio historial = HistorialBeneficio.builder()
                 .id("hist-1")
                 .beneficioTitulo("15% en medicamentos")
-                .tipo(TipoBeneficio.DESCUENTO_PORCENTAJE)
+                .tipoBeneficioNombre("Descuento por porcentaje")
                 .valor("15%")
                 .comercioNombre("Farmacia Del Sol")
                 .socioId("socio-1")

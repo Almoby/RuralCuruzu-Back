@@ -284,6 +284,34 @@ public class GlobalExceptionHandler {
         return responder(HttpStatus.CONFLICT, ex.getMessage(), request);
     }
 
+    @ExceptionHandler(TipoBeneficioNoEncontradoException.class)
+    public ResponseEntity<ApiErrorResponse> handleTipoBeneficioNoEncontrado(TipoBeneficioNoEncontradoException ex,
+                                                                              HttpServletRequest request) {
+        log.warn("Tipo de beneficio no encontrado [{}]: {}", request.getRequestURI(), ex.getMessage());
+        return responder(HttpStatus.NOT_FOUND, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(TipoBeneficioCodigoDuplicadoException.class)
+    public ResponseEntity<ApiErrorResponse> handleTipoBeneficioCodigoDuplicado(TipoBeneficioCodigoDuplicadoException ex,
+                                                                                 HttpServletRequest request) {
+        log.warn("Alta de tipo de beneficio rechazada [{}]: {}", request.getRequestURI(), ex.getMessage());
+        return responder(HttpStatus.CONFLICT, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(TipoBeneficioInvalidoException.class)
+    public ResponseEntity<ApiErrorResponse> handleTipoBeneficioInvalido(TipoBeneficioInvalidoException ex,
+                                                                          HttpServletRequest request) {
+        log.warn("Tipo de beneficio inválido [{}]: {}", request.getRequestURI(), ex.getMessage());
+        return responder(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(TipoBeneficioEnUsoException.class)
+    public ResponseEntity<ApiErrorResponse> handleTipoBeneficioEnUso(TipoBeneficioEnUsoException ex,
+                                                                       HttpServletRequest request) {
+        log.warn("Eliminación de tipo de beneficio rechazada [{}]: {}", request.getRequestURI(), ex.getMessage());
+        return responder(HttpStatus.CONFLICT, ex.getMessage(), request);
+    }
+
     @ExceptionHandler(AccessDeniedException.class)
     public ResponseEntity<ApiErrorResponse> handleAccessDenied(AccessDeniedException ex,
                                                                 HttpServletRequest request) {

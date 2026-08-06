@@ -32,7 +32,6 @@ import com.almoby.ruralcuruzu.enums.EstadoComercio;
 import com.almoby.ruralcuruzu.enums.EstadoCuota;
 import com.almoby.ruralcuruzu.enums.EstadoSocio;
 import com.almoby.ruralcuruzu.enums.EstadoUsoBeneficio;
-import com.almoby.ruralcuruzu.enums.TipoBeneficio;
 import com.almoby.ruralcuruzu.enums.TipoPersona;
 import com.almoby.ruralcuruzu.repository.BeneficioRepository;
 import com.almoby.ruralcuruzu.repository.ComercioRepository;
@@ -110,7 +109,7 @@ class DashboardServiceImplTest {
                 .socioId(socioId)
                 .beneficioId(beneficioId)
                 .beneficioTitulo(beneficioTitulo)
-                .tipo(TipoBeneficio.DESCUENTO_PORCENTAJE)
+                .tipoBeneficioNombre("Descuento por porcentaje")
                 .estado(estado)
                 .fechaUso(fechaUso)
                 .build();

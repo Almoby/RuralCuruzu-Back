@@ -5,7 +5,6 @@ import java.time.LocalDate;
 
 import com.almoby.ruralcuruzu.domain.Beneficio;
 import com.almoby.ruralcuruzu.enums.EstadoBeneficio;
-import com.almoby.ruralcuruzu.enums.TipoBeneficio;
 
 /**
  * Detalle completo de un beneficio, para el comercio que lo administra.
@@ -21,7 +20,8 @@ public record BeneficioResponse(
         String comercioNombre,
         String titulo,
         String descripcion,
-        TipoBeneficio tipo,
+        String tipoBeneficioId,
+        String tipoBeneficioNombre,
         String valor,
         LocalDate fechaInicioVigencia,
         LocalDate fechaFinVigencia,
@@ -44,7 +44,8 @@ public record BeneficioResponse(
                 beneficio.getComercioNombre(),
                 beneficio.getTitulo(),
                 beneficio.getDescripcion(),
-                beneficio.getTipo(),
+                beneficio.getTipoBeneficioId(),
+                beneficio.getTipoBeneficioNombre(),
                 beneficio.getValor(),
                 beneficio.getFechaInicioVigencia(),
                 beneficio.getFechaFinVigencia(),

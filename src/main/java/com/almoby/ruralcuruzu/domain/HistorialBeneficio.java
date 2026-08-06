@@ -11,7 +11,6 @@ import org.springframework.data.mongodb.core.mapping.Field;
 
 import com.almoby.ruralcuruzu.enums.CategoriaSocio;
 import com.almoby.ruralcuruzu.enums.EstadoUsoBeneficio;
-import com.almoby.ruralcuruzu.enums.TipoBeneficio;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -50,8 +49,14 @@ public class HistorialBeneficio {
     @Field("beneficio_titulo")
     private String beneficioTitulo;
 
-    @Field("tipo")
-    private TipoBeneficio tipo;
+    /**
+     * Nombre del tipo de beneficio al momento del canje (ej. "Descuento por
+     * porcentaje"), copiado del catálogo administrable. Solo el nombre, sin el
+     * id: este registro es un comprobante histórico, no necesita seguir
+     * apuntando al catálogo (que puede cambiar o perder esa entrada después).
+     */
+    @Field("tipo_beneficio_nombre")
+    private String tipoBeneficioNombre;
 
     @Field("valor")
     private String valor;

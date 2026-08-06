@@ -92,7 +92,9 @@ public class SocioAdminController {
         return ResponseEntity.ok(socioService.listarSocios(estado));
     }
 
-    @Operation(summary = "Ver el detalle de un socio")
+    @Operation(summary = "Ver el detalle de un socio",
+            description = "Incluye estadoCuenta (deuda total y el detalle de todas sus cuotas), para no tener "
+                    + "que combinarlo con una llamada aparte a Cuotas.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Socio encontrado"),
             @ApiResponse(responseCode = "404", description = "No existe un socio con ese id",

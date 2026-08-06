@@ -7,12 +7,14 @@ import java.time.LocalDate;
 import org.springframework.stereotype.Service;
 
 import com.almoby.ruralcuruzu.domain.Notificacion;
+import com.almoby.ruralcuruzu.dto.response.NotificacionResponse;
 import com.almoby.ruralcuruzu.enums.ResultadoNotificacion;
 import com.almoby.ruralcuruzu.enums.TipoNotificacion;
 import com.almoby.ruralcuruzu.repository.NotificacionRepository;
 import com.almoby.ruralcuruzu.repository.UsuarioRepository;
 import com.almoby.ruralcuruzu.service.EmailSender;
 import com.almoby.ruralcuruzu.service.EmailService;
+import com.almoby.ruralcuruzu.service.NotificacionSseService;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -33,12 +35,15 @@ public class NotificacionEmailServiceImpl implements EmailService {
     private final EmailSender emailSender;
     private final NotificacionRepository notificacionRepository;
     private final UsuarioRepository usuarioRepository;
+    private final NotificacionSseService notificacionSseService;
 
     public NotificacionEmailServiceImpl(EmailSender emailSender, NotificacionRepository notificacionRepository,
-                                         UsuarioRepository usuarioRepository) {
+                                         UsuarioRepository usuarioRepository,
+                                         NotificacionSseService notificacionSseService) {
         this.emailSender = emailSender;
         this.notificacionRepository = notificacionRepository;
         this.usuarioRepository = usuarioRepository;
+        this.notificacionSseService = notificacionSseService;
     }
 
     @Override
@@ -217,6 +222,13 @@ public class NotificacionEmailServiceImpl implements EmailService {
                     .fechaEnvio(Instant.now())
                     .build();
             notificacionRepository.save(notificacion);
+
+            // Push en tiempo real (mejora futura pedida por el front): solo si el
+            // destinatario es un Usuario nuestro (destinatarioId != null) — sin cuenta
+            // no hay a quién empujarle nada. El polling sigue andando igual siempre.
+            if (destinatarioId != null) {
+                notificacionSseService.enviar(destinatarioId, NotificacionResponse.from(notificacion));
+            }
         } catch (RuntimeException ex) {
             // El registro es auditoría, no una regla de negocio: si falla (ej. Mongo
             // caído), no debe tumbar el envío del correo que ya se intentó/logró.

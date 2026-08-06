@@ -3,6 +3,7 @@ package com.almoby.ruralcuruzu.service.impl;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -23,6 +24,7 @@ import com.almoby.ruralcuruzu.enums.TipoNotificacion;
 import com.almoby.ruralcuruzu.repository.NotificacionRepository;
 import com.almoby.ruralcuruzu.repository.UsuarioRepository;
 import com.almoby.ruralcuruzu.service.EmailSender;
+import com.almoby.ruralcuruzu.service.NotificacionSseService;
 
 /**
  * El decorator es el corazón del registro de la sección 29.3: por cada envío
@@ -39,12 +41,15 @@ class NotificacionEmailServiceImplTest {
     private NotificacionRepository notificacionRepository;
     @Mock
     private UsuarioRepository usuarioRepository;
+    @Mock
+    private NotificacionSseService notificacionSseService;
 
     private NotificacionEmailServiceImpl service;
 
     @BeforeEach
     void setUp() {
-        service = new NotificacionEmailServiceImpl(emailSender, notificacionRepository, usuarioRepository);
+        service = new NotificacionEmailServiceImpl(emailSender, notificacionRepository, usuarioRepository,
+                notificacionSseService);
     }
 
     @Test
@@ -66,6 +71,8 @@ class NotificacionEmailServiceImplTest {
         assertThat(notificacion.getTipo()).isEqualTo(TipoNotificacion.CUOTA_GENERADA);
         assertThat(notificacion.getResultado()).isEqualTo(ResultadoNotificacion.EXITOSO);
         assertThat(notificacion.getError()).isNull();
+
+        verify(notificacionSseService).enviar(eq("usuario-1"), any());
     }
 
     @Test
@@ -110,6 +117,9 @@ class NotificacionEmailServiceImplTest {
         verify(notificacionRepository).save(captor.capture());
         assertThat(captor.getValue().getDestinatarioId()).isNull();
         assertThat(captor.getValue().getTipo()).isEqualTo(TipoNotificacion.PAGO_INFORMADO);
+
+        // Sin destinatarioId no hay a quién empujarle el evento SSE.
+        verify(notificacionSseService, org.mockito.Mockito.never()).enviar(any(), any());
     }
 
     @Test

@@ -2,13 +2,11 @@ package com.almoby.ruralcuruzu.dto.request;
 
 import java.time.LocalDate;
 
-import com.almoby.ruralcuruzu.enums.TipoBeneficio;
 import com.almoby.ruralcuruzu.validation.RangoDeVigencia;
 import com.almoby.ruralcuruzu.validation.RangoDeVigenciaValido;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
 
 /** Edición de un beneficio propio. */
 @RangoDeVigenciaValido
@@ -19,8 +17,9 @@ public record ActualizarBeneficioRequest(
 
         String descripcion,
 
-        @NotNull(message = "El tipo de beneficio es obligatorio")
-        TipoBeneficio tipo,
+        @Schema(description = "Id de un tipo activo del catálogo (GET /api/tipos-beneficio)")
+        @NotBlank(message = "El tipo de beneficio es obligatorio")
+        String tipoBeneficioId,
 
         @NotBlank(message = "El valor es obligatorio")
         String valor,

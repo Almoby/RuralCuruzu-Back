@@ -14,6 +14,7 @@ import com.almoby.ruralcuruzu.dto.request.ActualizarSocioParcialRequest;
 import com.almoby.ruralcuruzu.dto.request.AltaManualSocioRequest;
 import com.almoby.ruralcuruzu.dto.request.CambiarEstadoSocioRequest;
 import com.almoby.ruralcuruzu.dto.response.CambiarEstadoSocioResponse;
+import com.almoby.ruralcuruzu.dto.response.EstadoCuentaSocioResponse;
 import com.almoby.ruralcuruzu.dto.response.EstadoQrResponse;
 import com.almoby.ruralcuruzu.dto.response.MiQrResponse;
 import com.almoby.ruralcuruzu.dto.response.SocioActualizadoResponse;
@@ -30,6 +31,7 @@ import com.almoby.ruralcuruzu.repository.UsuarioRepository;
 import com.almoby.ruralcuruzu.security.jwt.QrTokenGenerado;
 import com.almoby.ruralcuruzu.security.jwt.QrTokenService;
 import com.almoby.ruralcuruzu.service.CuentaAccesoService;
+import com.almoby.ruralcuruzu.service.CuotaService;
 import com.almoby.ruralcuruzu.service.EmailService;
 import com.almoby.ruralcuruzu.service.EstadoQrService;
 import com.almoby.ruralcuruzu.service.SecuenciaService;
@@ -63,6 +65,7 @@ public class SocioServiceImpl implements SocioService {
     private final EmailService emailService;
     private final EstadoQrService estadoQrService;
     private final QrTokenService qrTokenService;
+    private final CuotaService cuotaService;
 
     public SocioServiceImpl(SocioRepository socioRepository,
                              UsuarioRepository usuarioRepository,
@@ -70,7 +73,8 @@ public class SocioServiceImpl implements SocioService {
                              CuentaAccesoService cuentaAccesoService,
                              EmailService emailService,
                              EstadoQrService estadoQrService,
-                             QrTokenService qrTokenService) {
+                             QrTokenService qrTokenService,
+                             CuotaService cuotaService) {
         this.socioRepository = socioRepository;
         this.usuarioRepository = usuarioRepository;
         this.secuenciaService = secuenciaService;
@@ -78,6 +82,7 @@ public class SocioServiceImpl implements SocioService {
         this.emailService = emailService;
         this.estadoQrService = estadoQrService;
         this.qrTokenService = qrTokenService;
+        this.cuotaService = cuotaService;
     }
 
     @Override
@@ -173,7 +178,9 @@ public class SocioServiceImpl implements SocioService {
 
     @Override
     public SocioResponse obtenerSocioPorId(String id) {
-        return SocioResponse.from(buscarOFallar(id));
+        Socio socio = buscarOFallar(id);
+        EstadoCuentaSocioResponse estadoCuenta = cuotaService.obtenerEstadoCuentaSocio(socio.getId());
+        return SocioResponse.from(socio, estadoCuenta);
     }
 
     @Override

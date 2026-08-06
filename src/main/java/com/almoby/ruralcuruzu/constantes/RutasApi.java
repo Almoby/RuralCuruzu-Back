@@ -51,6 +51,21 @@ public final class RutasApi {
      */
     public static final String NOTIFICACIONES_BASE = "/api/notificaciones";
     public static final String NOTIFICACIONES = NOTIFICACIONES_BASE + "/**";
+    /**
+     * Conexión SSE de notificaciones en tiempo real. Ruta exacta (no un patrón
+     * "/**"): JwtAuthenticationFilter la compara contra request.getRequestURI()
+     * para decidir si acepta el token como query param (ver comentario ahí).
+     */
+    public static final String NOTIFICACIONES_STREAM = NOTIFICACIONES_BASE + "/stream";
+    public static final String ADMIN_TIPOS_BENEFICIO_BASE = "/api/admin/tipos-beneficio";
+    public static final String ADMIN_TIPOS_BENEFICIO = ADMIN_TIPOS_BENEFICIO_BASE + "/**";
+    /**
+     * Sin prefijo de rol a propósito, mismo criterio que NOTIFICACIONES_BASE:
+     * cualquier rol autenticado puede listar los tipos activos (lo usa
+     * principalmente el comercio, para el dropdown al crear un beneficio).
+     */
+    public static final String TIPOS_BENEFICIO_BASE = "/api/tipos-beneficio";
+    public static final String TIPOS_BENEFICIO = TIPOS_BENEFICIO_BASE + "/**";
 
     public static final String SWAGGER_UI_HTML = "/swagger-ui.html";
     public static final String SWAGGER_UI = "/swagger-ui/**";

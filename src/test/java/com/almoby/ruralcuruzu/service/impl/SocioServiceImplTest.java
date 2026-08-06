@@ -32,6 +32,7 @@ import com.almoby.ruralcuruzu.dto.request.ActualizarSocioParcialRequest;
 import com.almoby.ruralcuruzu.dto.request.AltaManualSocioRequest;
 import com.almoby.ruralcuruzu.dto.request.CambiarEstadoSocioRequest;
 import com.almoby.ruralcuruzu.dto.response.CambiarEstadoSocioResponse;
+import com.almoby.ruralcuruzu.dto.response.EstadoCuentaSocioResponse;
 import com.almoby.ruralcuruzu.dto.response.EstadoQrResponse;
 import com.almoby.ruralcuruzu.dto.response.MiQrResponse;
 import com.almoby.ruralcuruzu.dto.response.SocioActualizadoResponse;
@@ -52,6 +53,7 @@ import com.almoby.ruralcuruzu.repository.UsuarioRepository;
 import com.almoby.ruralcuruzu.security.jwt.QrTokenGenerado;
 import com.almoby.ruralcuruzu.security.jwt.QrTokenService;
 import com.almoby.ruralcuruzu.service.CuentaAccesoService;
+import com.almoby.ruralcuruzu.service.CuotaService;
 import com.almoby.ruralcuruzu.service.EmailService;
 import com.almoby.ruralcuruzu.service.EstadoQrService;
 import com.almoby.ruralcuruzu.service.SecuenciaService;
@@ -81,13 +83,15 @@ class SocioServiceImplTest {
     private EstadoQrService estadoQrService;
     @Mock
     private QrTokenService qrTokenService;
+    @Mock
+    private CuotaService cuotaService;
 
     private SocioServiceImpl service;
 
     @BeforeEach
     void setUp() {
         service = new SocioServiceImpl(socioRepository, usuarioRepository, secuenciaService, cuentaAccesoService,
-                emailService, estadoQrService, qrTokenService);
+                emailService, estadoQrService, qrTokenService, cuotaService);
     }
 
     private SolicitudSocio solicitudAprobada() {
@@ -340,9 +344,12 @@ class SocioServiceImplTest {
     }
 
     @Test
-    void obtenerSocioPorId_existente_devuelveElDetalle() {
+    void obtenerSocioPorId_existente_devuelveElDetalleConEstadoDeCuenta() {
         when(socioRepository.findById("socio-1")).thenReturn(
                 Optional.of(socioActivo("socio-1", "SOC-000001", "García, Juan Carlos")));
+        EstadoCuentaSocioResponse estadoCuenta = new EstadoCuentaSocioResponse(
+                "socio-1", "SOC-000001", "García, Juan Carlos", new java.math.BigDecimal("100"), List.of());
+        when(cuotaService.obtenerEstadoCuentaSocio("socio-1")).thenReturn(estadoCuenta);
 
         SocioResponse resultado = service.obtenerSocioPorId("socio-1");
 
@@ -350,6 +357,8 @@ class SocioServiceImplTest {
         assertThat(resultado.numeroSocio()).isEqualTo("SOC-000001");
         assertThat(resultado.nombre()).isEqualTo("García, Juan Carlos");
         assertThat(resultado.categoria()).isEqualTo(CategoriaSocio.ACTIVO);
+        assertThat(resultado.estadoCuenta()).isSameAs(estadoCuenta);
+        verify(cuotaService).obtenerEstadoCuentaSocio("socio-1");
     }
 
     @Test

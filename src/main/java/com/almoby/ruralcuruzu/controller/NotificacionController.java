@@ -2,6 +2,7 @@ package com.almoby.ruralcuruzu.controller;
 
 import java.util.List;
 
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -9,6 +10,7 @@ import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import com.almoby.ruralcuruzu.constantes.RutasApi;
 import com.almoby.ruralcuruzu.dto.response.ContadorNoLeidasResponse;
@@ -16,6 +18,7 @@ import com.almoby.ruralcuruzu.dto.response.NotificacionResponse;
 import com.almoby.ruralcuruzu.exception.ApiErrorResponse;
 import com.almoby.ruralcuruzu.security.AuthenticatedUser;
 import com.almoby.ruralcuruzu.service.NotificacionService;
+import com.almoby.ruralcuruzu.service.NotificacionSseService;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -42,9 +45,12 @@ import lombok.extern.slf4j.Slf4j;
 public class NotificacionController {
 
     private final NotificacionService notificacionService;
+    private final NotificacionSseService notificacionSseService;
 
-    public NotificacionController(NotificacionService notificacionService) {
+    public NotificacionController(NotificacionService notificacionService,
+                                   NotificacionSseService notificacionSseService) {
         this.notificacionService = notificacionService;
+        this.notificacionSseService = notificacionSseService;
     }
 
     @Operation(summary = "Ver mis notificaciones", description = "Más recientes primero, leídas y no leídas.")
@@ -65,6 +71,21 @@ public class NotificacionController {
     @GetMapping("/no-leidas/contador")
     public ResponseEntity<ContadorNoLeidasResponse> contarNoLeidas(@AuthenticationPrincipal AuthenticatedUser usuario) {
         return ResponseEntity.ok(notificacionService.contarNoLeidas(usuario.usuario().getId()));
+    }
+
+    @Operation(summary = "Conectarse al stream de notificaciones en tiempo real (SSE)",
+            description = "Complementa al polling (no lo reemplaza): mientras la conexión esté abierta, el front "
+                    + "recibe un evento \"notificacion\" apenas se genera una nueva, sin esperar al próximo poll. "
+                    + "Pensado para consumirse con EventSource del browser, que no puede mandar headers custom: por "
+                    + "eso, SOLO esta ruta acepta el token como query param (?token=...) además del header "
+                    + "Authorization de siempre. Ejemplo: new EventSource('/api/notificaciones/stream?token=...').")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Conexión abierta correctamente")
+    })
+    @GetMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter suscribirse(@AuthenticationPrincipal AuthenticatedUser usuario) {
+        log.info("GET /api/notificaciones/stream - usuarioId={}", usuario.usuario().getId());
+        return notificacionSseService.suscribir(usuario.usuario().getId());
     }
 
     @Operation(summary = "Marcar una notificación propia como leída")

@@ -14,6 +14,7 @@ import com.almoby.ruralcuruzu.domain.Beneficio;
 import com.almoby.ruralcuruzu.domain.Comercio;
 import com.almoby.ruralcuruzu.domain.HistorialBeneficio;
 import com.almoby.ruralcuruzu.domain.Socio;
+import com.almoby.ruralcuruzu.domain.TipoBeneficioCatalogo;
 import com.almoby.ruralcuruzu.dto.request.ActualizarBeneficioRequest;
 import com.almoby.ruralcuruzu.dto.request.CambiarEstadoBeneficioRequest;
 import com.almoby.ruralcuruzu.dto.request.CrearBeneficioRequest;
@@ -31,10 +32,12 @@ import com.almoby.ruralcuruzu.exception.BeneficioNoVigenteException;
 import com.almoby.ruralcuruzu.exception.BeneficioYaCanjeadoException;
 import com.almoby.ruralcuruzu.exception.CodigoQrInvalidoException;
 import com.almoby.ruralcuruzu.exception.ComercioNoEncontradoException;
+import com.almoby.ruralcuruzu.exception.TipoBeneficioInvalidoException;
 import com.almoby.ruralcuruzu.repository.BeneficioRepository;
 import com.almoby.ruralcuruzu.repository.ComercioRepository;
 import com.almoby.ruralcuruzu.repository.HistorialBeneficioRepository;
 import com.almoby.ruralcuruzu.repository.SocioRepository;
+import com.almoby.ruralcuruzu.repository.TipoBeneficioCatalogoRepository;
 import com.almoby.ruralcuruzu.security.jwt.QrTokenService;
 import com.almoby.ruralcuruzu.service.BeneficioService;
 import com.almoby.ruralcuruzu.service.EstadoQrService;
@@ -67,17 +70,20 @@ public class BeneficioServiceImpl implements BeneficioService {
     private final SocioRepository socioRepository;
     private final EstadoQrService estadoQrService;
     private final QrTokenService qrTokenService;
+    private final TipoBeneficioCatalogoRepository tipoBeneficioCatalogoRepository;
 
     public BeneficioServiceImpl(BeneficioRepository beneficioRepository,
                                  HistorialBeneficioRepository historialBeneficioRepository,
                                  ComercioRepository comercioRepository,
                                  SocioRepository socioRepository,
                                  EstadoQrService estadoQrService,
-                                 QrTokenService qrTokenService) {
+                                 QrTokenService qrTokenService,
+                                 TipoBeneficioCatalogoRepository tipoBeneficioCatalogoRepository) {
         this.beneficioRepository = beneficioRepository;
         this.historialBeneficioRepository = historialBeneficioRepository;
         this.comercioRepository = comercioRepository;
         this.socioRepository = socioRepository;
+        this.tipoBeneficioCatalogoRepository = tipoBeneficioCatalogoRepository;
         this.estadoQrService = estadoQrService;
         this.qrTokenService = qrTokenService;
     }
@@ -143,6 +149,7 @@ public class BeneficioServiceImpl implements BeneficioService {
     public BeneficioCreadoResponse crearBeneficio(String comercioId, CrearBeneficioRequest request) {
         Comercio comercio = comercioRepository.findById(comercioId)
                 .orElseThrow(() -> new ComercioNoEncontradoException(comercioId));
+        TipoBeneficioCatalogo tipoBeneficio = resolverTipoBeneficioActivo(request.tipoBeneficioId());
 
         Instant ahora = Instant.now();
         Beneficio beneficio = Beneficio.builder()
@@ -151,7 +158,8 @@ public class BeneficioServiceImpl implements BeneficioService {
                 .comercioRubro(comercio.getRubro())
                 .titulo(request.titulo())
                 .descripcion(request.descripcion())
-                .tipo(request.tipo())
+                .tipoBeneficioId(tipoBeneficio.getId())
+                .tipoBeneficioNombre(tipoBeneficio.getNombre())
                 .valor(request.valor())
                 .fechaInicioVigencia(request.fechaInicioVigencia())
                 .fechaFinVigencia(request.fechaFinVigencia())
@@ -193,10 +201,12 @@ public class BeneficioServiceImpl implements BeneficioService {
     public BeneficioResponse actualizarBeneficio(String comercioId, String beneficioId,
                                                   ActualizarBeneficioRequest request) {
         Beneficio beneficio = buscarPropioOFallar(comercioId, beneficioId);
+        TipoBeneficioCatalogo tipoBeneficio = resolverTipoBeneficioActivo(request.tipoBeneficioId());
 
         beneficio.setTitulo(request.titulo());
         beneficio.setDescripcion(request.descripcion());
-        beneficio.setTipo(request.tipo());
+        beneficio.setTipoBeneficioId(tipoBeneficio.getId());
+        beneficio.setTipoBeneficioNombre(tipoBeneficio.getNombre());
         beneficio.setValor(request.valor());
         beneficio.setFechaInicioVigencia(request.fechaInicioVigencia());
         beneficio.setFechaFinVigencia(request.fechaFinVigencia());
@@ -236,6 +246,13 @@ public class BeneficioServiceImpl implements BeneficioService {
         return BeneficioResponse.from(beneficio, usosEsteMes(beneficioId));
     }
 
+    /** Solo un tipo que exista Y esté activo es elegible para un beneficio nuevo o editado. */
+    private TipoBeneficioCatalogo resolverTipoBeneficioActivo(String tipoBeneficioId) {
+        return tipoBeneficioCatalogoRepository.findById(tipoBeneficioId)
+                .filter(TipoBeneficioCatalogo::isActivo)
+                .orElseThrow(() -> new TipoBeneficioInvalidoException(tipoBeneficioId));
+    }
+
     private long usosEsteMes(String beneficioId) {
         return historialBeneficioRepository.countByBeneficioIdAndFechaUsoAfter(beneficioId, FechaUtil.inicioDeMesActual());
     }
@@ -266,7 +283,7 @@ public class BeneficioServiceImpl implements BeneficioService {
         HistorialBeneficio historial = HistorialBeneficio.builder()
                 .beneficioId(beneficio.getId())
                 .beneficioTitulo(beneficio.getTitulo())
-                .tipo(beneficio.getTipo())
+                .tipoBeneficioNombre(beneficio.getTipoBeneficioNombre())
                 .valor(beneficio.getValor())
                 .comercioId(beneficio.getComercioId())
                 .comercioNombre(beneficio.getComercioNombre())

@@ -5,7 +5,6 @@ import java.time.Instant;
 
 import com.almoby.ruralcuruzu.domain.HistorialBeneficio;
 import com.almoby.ruralcuruzu.enums.EstadoUsoBeneficio;
-import com.almoby.ruralcuruzu.enums.TipoBeneficio;
 
 /** Fila del historial de beneficios usados por un socio (documento, secciones 14.4 y 19.3). */
 public record HistorialBeneficioResponse(
@@ -13,7 +12,7 @@ public record HistorialBeneficioResponse(
         String id,
         String comercioNombre,
         String beneficioTitulo,
-        TipoBeneficio tipo,
+        String tipoBeneficioNombre,
         String valor,
         BigDecimal montoAhorro,
         EstadoUsoBeneficio estado,
@@ -26,7 +25,7 @@ public record HistorialBeneficioResponse(
                 historial.getId(),
                 historial.getComercioNombre(),
                 historial.getBeneficioTitulo(),
-                historial.getTipo(),
+                historial.getTipoBeneficioNombre(),
                 historial.getValor(),
                 historial.getMontoAhorro(),
                 historial.getEstado(),

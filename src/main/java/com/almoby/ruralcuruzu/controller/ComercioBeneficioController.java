@@ -56,7 +56,8 @@ public class ComercioBeneficioController {
     }
 
     @Operation(summary = "Crear un beneficio propio",
-            description = "Cualquier tipo (descuento en porcentaje, 2x1, 3x2, gratis, etc.). Queda ACTIVO desde que se crea.")
+            description = "tipoBeneficioId debe ser el id de un tipo ACTIVO del catálogo (GET /api/tipos-beneficio). "
+                    + "Queda ACTIVO desde que se crea.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Beneficio creado correctamente"),
             @ApiResponse(responseCode = "400", description = "Datos inválidos",

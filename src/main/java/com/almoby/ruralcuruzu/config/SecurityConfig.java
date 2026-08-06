@@ -104,10 +104,11 @@ public class SecurityConfig {
                         .requestMatchers(RutasApi.COMERCIO_BENEFICIOS).hasRole("COMERCIO")
                         .requestMatchers(RutasApi.COMERCIO_DASHBOARD).hasRole("COMERCIO")
                         .requestMatchers(RutasApi.ADMIN_DASHBOARD).hasRole("ADMIN")
-                        // RutasApi.NOTIFICACIONES (la campanita) a proposito no tiene un
-                        // matcher propio acá: cualquier rol autenticado ve unicamente sus
-                        // propias notificaciones, así que queda cubierta por el
-                        // ".anyRequest().authenticated()" de abajo.
+                        .requestMatchers(RutasApi.ADMIN_TIPOS_BENEFICIO).hasRole("ADMIN")
+                        // RutasApi.NOTIFICACIONES (la campanita) y RutasApi.TIPOS_BENEFICIO
+                        // (catálogo de solo lectura para el dropdown) a proposito no tienen
+                        // un matcher propio acá: cualquier rol autenticado puede pegarles,
+                        // así que quedan cubiertas por el ".anyRequest().authenticated()" de abajo.
                         .anyRequest().authenticated())
                 .exceptionHandling(handling -> handling
                         .authenticationEntryPoint(authenticationEntryPoint)
