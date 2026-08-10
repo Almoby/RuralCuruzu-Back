@@ -27,6 +27,7 @@ public record BeneficioResponse(
         LocalDate fechaFinVigencia,
         EstadoBeneficio estado,
         long usosEsteMes,
+        int limiteUsosPorSocio,
         Instant fechaCreacion,
         Instant fechaActualizacion
 
@@ -51,6 +52,9 @@ public record BeneficioResponse(
                 beneficio.getFechaFinVigencia(),
                 beneficio.estadoEfectivo(),
                 usosEsteMes,
+                // Normalizado (nunca null): 1 = default legado, 0 = ilimitado. Ver
+                // Beneficio.limiteUsosPorSocioEfectivo().
+                beneficio.limiteUsosPorSocioEfectivo(),
                 beneficio.getFechaCreacion(),
                 beneficio.getFechaActualizacion());
     }

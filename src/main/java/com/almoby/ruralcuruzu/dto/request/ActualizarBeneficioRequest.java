@@ -7,6 +7,7 @@ import com.almoby.ruralcuruzu.validation.RangoDeVigenciaValido;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.PositiveOrZero;
 
 /** Edición de un beneficio propio. */
 @RangoDeVigenciaValido
@@ -28,7 +29,14 @@ public record ActualizarBeneficioRequest(
         LocalDate fechaInicioVigencia,
 
         @Schema(description = "Null: sin fecha de vencimiento")
-        LocalDate fechaFinVigencia
+        LocalDate fechaFinVigencia,
+
+        @Schema(description = "Cuántas veces puede usar este beneficio el mismo socio, para siempre. Si se "
+                + "omite, queda limitado a 1 uso. 0 = sin límite (ilimitado). Cualquier entero positivo "
+                + "(1, 2, 3...) = ese límite exacto. Bajar el límite no afecta los usos ya canjeados, solo "
+                + "los que falten.", example = "1")
+        @PositiveOrZero(message = "El límite de usos no puede ser negativo")
+        Integer limiteUsosPorSocio
 
 ) implements RangoDeVigencia {
 }

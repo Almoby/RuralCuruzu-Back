@@ -23,6 +23,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DuplicateKeyException;
 
 import com.almoby.ruralcuruzu.domain.Beneficio;
 import com.almoby.ruralcuruzu.domain.Comercio;
@@ -161,7 +162,7 @@ class BeneficioServiceImplTest {
 
         CrearBeneficioRequest request = new CrearBeneficioRequest(
                 "15% en medicamentos", "Descuento en venta libre", "tipo-1", "15%",
-                null, LocalDate.of(2026, 12, 31));
+                null, LocalDate.of(2026, 12, 31), null);
 
         BeneficioCreadoResponse response = service.crearBeneficio("comercio-1", request);
 
@@ -169,6 +170,36 @@ class BeneficioServiceImplTest {
         assertThat(response.beneficio().comercioNombre()).isEqualTo("Farmacia Del Sol");
         assertThat(response.beneficio().comercioId()).isEqualTo("comercio-1");
         assertThat(response.beneficio().estado()).isEqualTo(EstadoBeneficio.ACTIVO);
+        // limiteUsosPorSocio omitido (null) en el request -> 1 uso, el default legado.
+        assertThat(response.beneficio().limiteUsosPorSocio()).isEqualTo(1);
+    }
+
+    @Test
+    void crearBeneficio_conLimiteDeUsosExplicito_loGuardaYLoDevuelveNormalizado() {
+        when(comercioRepository.findById("comercio-1")).thenReturn(Optional.of(comercio()));
+        when(beneficioRepository.save(any(Beneficio.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        CrearBeneficioRequest request = new CrearBeneficioRequest(
+                "15% en medicamentos", "Descuento en venta libre", "tipo-1", "15%",
+                null, null, 3);
+
+        BeneficioCreadoResponse response = service.crearBeneficio("comercio-1", request);
+
+        assertThat(response.beneficio().limiteUsosPorSocio()).isEqualTo(3);
+    }
+
+    @Test
+    void crearBeneficio_conLimiteCero_loDevuelveComoIlimitado() {
+        when(comercioRepository.findById("comercio-1")).thenReturn(Optional.of(comercio()));
+        when(beneficioRepository.save(any(Beneficio.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        CrearBeneficioRequest request = new CrearBeneficioRequest(
+                "15% en medicamentos", "Descuento en venta libre", "tipo-1", "15%",
+                null, null, 0);
+
+        BeneficioCreadoResponse response = service.crearBeneficio("comercio-1", request);
+
+        assertThat(response.beneficio().limiteUsosPorSocio()).isEqualTo(0);
     }
 
     @Test
@@ -178,7 +209,7 @@ class BeneficioServiceImplTest {
 
         CrearBeneficioRequest request = new CrearBeneficioRequest(
                 "15% en medicamentos", "Descuento en venta libre", "tipo-1", "15%",
-                LocalDate.now().plusDays(7), null);
+                LocalDate.now().plusDays(7), null, null);
 
         BeneficioCreadoResponse response = service.crearBeneficio("comercio-1", request);
 
@@ -195,7 +226,7 @@ class BeneficioServiceImplTest {
         when(comercioRepository.findById("no-existe")).thenReturn(Optional.empty());
 
         CrearBeneficioRequest request = new CrearBeneficioRequest(
-                "titulo", "desc", "tipo-1", "Gratis", null, null);
+                "titulo", "desc", "tipo-1", "Gratis", null, null, null);
 
         assertThatThrownBy(() -> service.crearBeneficio("no-existe", request))
                 .isInstanceOf(ComercioNoEncontradoException.class);
@@ -207,7 +238,7 @@ class BeneficioServiceImplTest {
         when(tipoBeneficioCatalogoRepository.findById("no-existe")).thenReturn(Optional.empty());
 
         CrearBeneficioRequest request = new CrearBeneficioRequest(
-                "titulo", "desc", "no-existe", "Gratis", null, null);
+                "titulo", "desc", "no-existe", "Gratis", null, null, null);
 
         assertThatThrownBy(() -> service.crearBeneficio("comercio-1", request))
                 .isInstanceOf(TipoBeneficioInvalidoException.class);
@@ -222,7 +253,7 @@ class BeneficioServiceImplTest {
         when(tipoBeneficioCatalogoRepository.findById("tipo-inactivo")).thenReturn(Optional.of(inactivo));
 
         CrearBeneficioRequest request = new CrearBeneficioRequest(
-                "titulo", "desc", "tipo-inactivo", "Gratis", null, null);
+                "titulo", "desc", "tipo-inactivo", "Gratis", null, null, null);
 
         assertThatThrownBy(() -> service.crearBeneficio("comercio-1", request))
                 .isInstanceOf(TipoBeneficioInvalidoException.class);
@@ -266,12 +297,27 @@ class BeneficioServiceImplTest {
         when(beneficioRepository.save(any(Beneficio.class))).thenAnswer(inv -> inv.getArgument(0));
 
         ActualizarBeneficioRequest request = new ActualizarBeneficioRequest(
-                "20% en medicamentos", "nueva desc", "tipo-1", "20%", null, null);
+                "20% en medicamentos", "nueva desc", "tipo-1", "20%", null, null, null);
 
         BeneficioResponse response = service.actualizarBeneficio("comercio-1", "beneficio-1", request);
 
         assertThat(response.titulo()).isEqualTo("20% en medicamentos");
         assertThat(response.valor()).isEqualTo("20%");
+    }
+
+    @Test
+    void actualizarBeneficio_conNuevoLimiteDeUsos_loActualiza() {
+        Beneficio beneficio = beneficioVigente("beneficio-1", "comercio-1");
+        beneficio.setLimiteUsosPorSocio(1);
+        when(beneficioRepository.findById("beneficio-1")).thenReturn(Optional.of(beneficio));
+        when(beneficioRepository.save(any(Beneficio.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        ActualizarBeneficioRequest request = new ActualizarBeneficioRequest(
+                "15% en medicamentos", "desc", "tipo-1", "15%", null, null, 5);
+
+        BeneficioResponse response = service.actualizarBeneficio("comercio-1", "beneficio-1", request);
+
+        assertThat(response.limiteUsosPorSocio()).isEqualTo(5);
     }
 
     @Test
@@ -284,7 +330,7 @@ class BeneficioServiceImplTest {
 
         ActualizarBeneficioRequest request = new ActualizarBeneficioRequest(
                 "15% en medicamentos", "desc", "tipo-1", "15%",
-                null, LocalDate.now().plusDays(30));
+                null, LocalDate.now().plusDays(30), null);
 
         BeneficioResponse response = service.actualizarBeneficio("comercio-1", "beneficio-1", request);
 
@@ -302,7 +348,7 @@ class BeneficioServiceImplTest {
 
         ActualizarBeneficioRequest request = new ActualizarBeneficioRequest(
                 "15% en medicamentos", "desc", "tipo-1", "15%",
-                null, LocalDate.now().plusDays(60));
+                null, LocalDate.now().plusDays(60), null);
 
         BeneficioResponse response = service.actualizarBeneficio("comercio-1", "beneficio-1", request);
 
@@ -323,7 +369,7 @@ class BeneficioServiceImplTest {
 
         ActualizarBeneficioRequest request = new ActualizarBeneficioRequest(
                 "15% en medicamentos", "desc", "tipo-1", "15%",
-                null, LocalDate.now().plusDays(30));
+                null, LocalDate.now().plusDays(30), null);
 
         BeneficioResponse response = service.actualizarBeneficio("comercio-1", "beneficio-1", request);
 
@@ -340,7 +386,7 @@ class BeneficioServiceImplTest {
 
         ActualizarBeneficioRequest request = new ActualizarBeneficioRequest(
                 "15% en medicamentos", "desc", "tipo-1", "15%",
-                LocalDate.now(), null); // adelantan el inicio a hoy
+                LocalDate.now(), null, null); // adelantan el inicio a hoy
 
         BeneficioResponse response = service.actualizarBeneficio("comercio-1", "beneficio-1", request);
 
@@ -355,7 +401,7 @@ class BeneficioServiceImplTest {
 
         ActualizarBeneficioRequest request = new ActualizarBeneficioRequest(
                 "15% en medicamentos", "desc", "tipo-1", "15%",
-                LocalDate.now().plusDays(7), null); // atrasan el inicio a la semana que viene
+                LocalDate.now().plusDays(7), null, null); // atrasan el inicio a la semana que viene
 
         BeneficioResponse response = service.actualizarBeneficio("comercio-1", "beneficio-1", request);
 
@@ -373,7 +419,7 @@ class BeneficioServiceImplTest {
 
         ActualizarBeneficioRequest request = new ActualizarBeneficioRequest(
                 "15% en medicamentos", "desc", "tipo-1", "15%",
-                null, null); // fechas que lo dejarían vigente hoy si no estuviera pausado
+                null, null, null); // fechas que lo dejarían vigente hoy si no estuviera pausado
 
         BeneficioResponse response = service.actualizarBeneficio("comercio-1", "beneficio-1", request);
 
@@ -430,7 +476,7 @@ class BeneficioServiceImplTest {
         when(qrTokenService.extraerSocioId("qr-abc-123")).thenReturn("socio-1");
         when(socioRepository.findById("socio-1")).thenReturn(Optional.of(socio()));
         when(beneficioRepository.findById("beneficio-1")).thenReturn(Optional.of(beneficio));
-        when(historialBeneficioRepository.existsBySocioIdAndBeneficioId("socio-1", "beneficio-1")).thenReturn(false);
+        when(historialBeneficioRepository.countBySocioIdAndBeneficioId("socio-1", "beneficio-1")).thenReturn(0L);
         when(historialBeneficioRepository.save(any(HistorialBeneficio.class))).thenAnswer(inv -> inv.getArgument(0));
 
         ValidarBeneficioRequest request = new ValidarBeneficioRequest("qr-abc-123", "beneficio-1", new BigDecimal("450.00"));
@@ -445,6 +491,10 @@ class BeneficioServiceImplTest {
         assertThat(response.beneficioTipoNombre()).isEqualTo("Descuento por porcentaje");
         assertThat(response.beneficioValor()).isEqualTo("15%");
         assertThat(response.montoAhorro()).isEqualByComparingTo("450.00");
+        // No tenía usos previos (0) + este canje = 1; límite default legado = 1 -> no le queda ninguno.
+        assertThat(response.usosDelSocio()).isEqualTo(1L);
+        assertThat(response.limiteUsosPorSocio()).isEqualTo(1);
+        assertThat(response.usosRestantes()).isEqualTo(0);
 
         ArgumentCaptor<HistorialBeneficio> captor = ArgumentCaptor.forClass(HistorialBeneficio.class);
         verify(historialBeneficioRepository).save(captor.capture());
@@ -460,7 +510,7 @@ class BeneficioServiceImplTest {
         when(qrTokenService.extraerSocioId("jwt-real-del-socio")).thenReturn("socio-1");
         when(socioRepository.findById("socio-1")).thenReturn(Optional.of(socio()));
         when(beneficioRepository.findById("beneficio-1")).thenReturn(Optional.of(beneficio));
-        when(historialBeneficioRepository.existsBySocioIdAndBeneficioId("socio-1", "beneficio-1")).thenReturn(false);
+        when(historialBeneficioRepository.countBySocioIdAndBeneficioId("socio-1", "beneficio-1")).thenReturn(0L);
         when(historialBeneficioRepository.save(any(HistorialBeneficio.class))).thenAnswer(inv -> inv.getArgument(0));
 
         // El comercio pegó el código corto (no escaneó), en vez del JWT largo.
@@ -584,13 +634,95 @@ class BeneficioServiceImplTest {
         when(qrTokenService.extraerSocioId("qr-abc-123")).thenReturn("socio-1");
         when(socioRepository.findById("socio-1")).thenReturn(Optional.of(socio()));
         when(beneficioRepository.findById("beneficio-1")).thenReturn(Optional.of(beneficio));
-        when(historialBeneficioRepository.existsBySocioIdAndBeneficioId("socio-1", "beneficio-1")).thenReturn(true);
+        when(historialBeneficioRepository.countBySocioIdAndBeneficioId("socio-1", "beneficio-1")).thenReturn(1L);
 
         ValidarBeneficioRequest request = new ValidarBeneficioRequest("qr-abc-123", "beneficio-1", BigDecimal.TEN);
 
         assertThatThrownBy(() -> service.validarYUsarBeneficio("comercio-1", "usuario-comercio-1", request))
-                .isInstanceOf(BeneficioYaCanjeadoException.class);
+                .isInstanceOf(BeneficioYaCanjeadoException.class)
+                .hasMessage("Este socio ya canjeó el beneficio 15% en medicamentos anteriormente");
         verify(historialBeneficioRepository, never()).save(any(HistorialBeneficio.class));
+    }
+
+    @Test
+    void validarYUsarBeneficio_conLimiteMayorAUno_permiteCanjearMientrasNoLlegueAlLimite() {
+        Beneficio beneficio = beneficioVigente("beneficio-1", "comercio-1");
+        beneficio.setLimiteUsosPorSocio(3);
+        when(qrTokenService.extraerSocioId("qr-abc-123")).thenReturn("socio-1");
+        when(socioRepository.findById("socio-1")).thenReturn(Optional.of(socio()));
+        when(beneficioRepository.findById("beneficio-1")).thenReturn(Optional.of(beneficio));
+        // Ya lo usó 2 veces; el límite es 3, así que todavía le queda una.
+        when(historialBeneficioRepository.countBySocioIdAndBeneficioId("socio-1", "beneficio-1")).thenReturn(2L);
+        when(historialBeneficioRepository.save(any(HistorialBeneficio.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        ValidarBeneficioRequest request = new ValidarBeneficioRequest("qr-abc-123", "beneficio-1", BigDecimal.TEN);
+
+        ValidarBeneficioResponse response = service.validarYUsarBeneficio("comercio-1", "usuario-comercio-1", request);
+
+        assertThat(response.mensaje()).isEqualTo("Beneficio aplicado con éxito");
+        // Tenía 2 usos previos, este es el 3ro (el límite): no le queda ninguno más.
+        assertThat(response.usosDelSocio()).isEqualTo(3L);
+        assertThat(response.limiteUsosPorSocio()).isEqualTo(3);
+        assertThat(response.usosRestantes()).isEqualTo(0);
+        verify(historialBeneficioRepository).save(any(HistorialBeneficio.class));
+    }
+
+    @Test
+    void validarYUsarBeneficio_conLimiteMayorAUno_bloqueaAlLlegarAlLimiteConMensajeConElNumero() {
+        Beneficio beneficio = beneficioVigente("beneficio-1", "comercio-1");
+        beneficio.setLimiteUsosPorSocio(3);
+        when(qrTokenService.extraerSocioId("qr-abc-123")).thenReturn("socio-1");
+        when(socioRepository.findById("socio-1")).thenReturn(Optional.of(socio()));
+        when(beneficioRepository.findById("beneficio-1")).thenReturn(Optional.of(beneficio));
+        // Ya lo usó 3 veces, que es justo el límite: no le queda ninguna más.
+        when(historialBeneficioRepository.countBySocioIdAndBeneficioId("socio-1", "beneficio-1")).thenReturn(3L);
+
+        ValidarBeneficioRequest request = new ValidarBeneficioRequest("qr-abc-123", "beneficio-1", BigDecimal.TEN);
+
+        assertThatThrownBy(() -> service.validarYUsarBeneficio("comercio-1", "usuario-comercio-1", request))
+                .isInstanceOf(BeneficioYaCanjeadoException.class)
+                .hasMessage("Este socio ya alcanzó el límite de 3 usos del beneficio 15% en medicamentos");
+        verify(historialBeneficioRepository, never()).save(any(HistorialBeneficio.class));
+    }
+
+    @Test
+    void validarYUsarBeneficio_conLimiteCero_esIlimitadoAunConMuchosUsosPrevios() {
+        Beneficio beneficio = beneficioVigente("beneficio-1", "comercio-1");
+        beneficio.setLimiteUsosPorSocio(0);
+        when(qrTokenService.extraerSocioId("qr-abc-123")).thenReturn("socio-1");
+        when(socioRepository.findById("socio-1")).thenReturn(Optional.of(socio()));
+        when(beneficioRepository.findById("beneficio-1")).thenReturn(Optional.of(beneficio));
+        when(historialBeneficioRepository.countBySocioIdAndBeneficioId("socio-1", "beneficio-1")).thenReturn(500L);
+        when(historialBeneficioRepository.save(any(HistorialBeneficio.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        ValidarBeneficioRequest request = new ValidarBeneficioRequest("qr-abc-123", "beneficio-1", BigDecimal.TEN);
+
+        ValidarBeneficioResponse response = service.validarYUsarBeneficio("comercio-1", "usuario-comercio-1", request);
+
+        assertThat(response.mensaje()).isEqualTo("Beneficio aplicado con éxito");
+        // Ilimitado (límite 0): usosRestantes es null aunque ya tenga 500 usos previos.
+        assertThat(response.usosDelSocio()).isEqualTo(501L);
+        assertThat(response.limiteUsosPorSocio()).isEqualTo(0);
+        assertThat(response.usosRestantes()).isNull();
+    }
+
+    @Test
+    void validarYUsarBeneficio_mongoRechazaComoDuplicado_lanzaBeneficioYaCanjeadoEnVezDePropagar500() {
+        // Red de contención: el chequeo puedeCanjear() ya dijo que sí, pero la base
+        // rechaza el insert igual (carrera entre dos canjes casi simultáneos, o un
+        // índice único legado que todavía no se dropeó en el cluster real).
+        Beneficio beneficio = beneficioVigente("beneficio-1", "comercio-1");
+        when(qrTokenService.extraerSocioId("qr-abc-123")).thenReturn("socio-1");
+        when(socioRepository.findById("socio-1")).thenReturn(Optional.of(socio()));
+        when(beneficioRepository.findById("beneficio-1")).thenReturn(Optional.of(beneficio));
+        when(historialBeneficioRepository.countBySocioIdAndBeneficioId("socio-1", "beneficio-1")).thenReturn(0L);
+        when(historialBeneficioRepository.save(any(HistorialBeneficio.class))).thenThrow(new DuplicateKeyException("E11000"));
+
+        ValidarBeneficioRequest request = new ValidarBeneficioRequest("qr-abc-123", "beneficio-1", new BigDecimal("450.00"));
+
+        assertThatThrownBy(() -> service.validarYUsarBeneficio("comercio-1", "usuario-comercio-1", request))
+                .isInstanceOf(BeneficioYaCanjeadoException.class)
+                .hasMessage("Este socio ya canjeó el beneficio 15% en medicamentos anteriormente");
     }
 
     // ---------- listarBeneficiosVigentes ----------
@@ -603,7 +735,7 @@ class BeneficioServiceImplTest {
 
         when(beneficioRepository.findByEstado(EstadoBeneficio.ACTIVO)).thenReturn(List.of(vigente, vencido));
 
-        List<BeneficioResumenResponse> resultado = service.listarBeneficiosVigentes(null, null);
+        List<BeneficioResumenResponse> resultado = service.listarBeneficiosVigentes(null, null, "socio-1");
 
         assertThat(resultado).hasSize(1);
         assertThat(resultado.get(0).id()).isEqualTo("beneficio-1");
@@ -617,7 +749,7 @@ class BeneficioServiceImplTest {
 
         when(beneficioRepository.findByEstado(EstadoBeneficio.ACTIVO)).thenReturn(List.of(farmacia, otroRubro));
 
-        List<BeneficioResumenResponse> resultado = service.listarBeneficiosVigentes("Farmacia", null);
+        List<BeneficioResumenResponse> resultado = service.listarBeneficiosVigentes("Farmacia", null, "socio-1");
 
         assertThat(resultado).hasSize(1);
         assertThat(resultado.get(0).comercioRubro()).isEqualTo("Farmacia");
@@ -632,10 +764,33 @@ class BeneficioServiceImplTest {
 
         when(beneficioRepository.findByEstado(EstadoBeneficio.ACTIVO)).thenReturn(List.of(coincide, noCoincide));
 
-        List<BeneficioResumenResponse> resultado = service.listarBeneficiosVigentes(null, "medicamentos");
+        List<BeneficioResumenResponse> resultado = service.listarBeneficiosVigentes(null, "medicamentos", "socio-1");
 
         assertThat(resultado).hasSize(1);
         assertThat(resultado.get(0).id()).isEqualTo("beneficio-1");
+    }
+
+    @Test
+    void listarBeneficiosVigentes_agregaUsosYRestantesDelSocioQueConsulta() {
+        Beneficio conUso = beneficioVigente("beneficio-1", "comercio-1");
+        conUso.setLimiteUsosPorSocio(3);
+        Beneficio sinUso = beneficioVigente("beneficio-2", "comercio-1");
+        when(beneficioRepository.findByEstado(EstadoBeneficio.ACTIVO)).thenReturn(List.of(conUso, sinUso));
+
+        HistorialBeneficio usoPrevio = HistorialBeneficio.builder().beneficioId("beneficio-1").build();
+        when(historialBeneficioRepository.findBySocioIdOrderByFechaUsoDesc("socio-1")).thenReturn(List.of(usoPrevio));
+
+        List<BeneficioResumenResponse> resultado = service.listarBeneficiosVigentes(null, null, "socio-1");
+
+        BeneficioResumenResponse conUsoResponse = resultado.stream()
+                .filter(r -> r.id().equals("beneficio-1")).findFirst().orElseThrow();
+        assertThat(conUsoResponse.usosDelSocio()).isEqualTo(1L);
+        assertThat(conUsoResponse.limiteUsosPorSocio()).isEqualTo(3);
+        assertThat(conUsoResponse.usosRestantes()).isEqualTo(2);
+
+        BeneficioResumenResponse sinUsoResponse = resultado.stream()
+                .filter(r -> r.id().equals("beneficio-2")).findFirst().orElseThrow();
+        assertThat(sinUsoResponse.usosDelSocio()).isEqualTo(0L);
     }
 
     // ---------- listarComerciosConBeneficios ----------
@@ -646,7 +801,7 @@ class BeneficioServiceImplTest {
         when(beneficioRepository.findByEstado(EstadoBeneficio.ACTIVO)).thenReturn(List.of(beneficio));
         when(comercioRepository.findById("comercio-1")).thenReturn(Optional.of(comercio()));
 
-        List<ComercioConBeneficiosResponse> resultado = service.listarComerciosConBeneficios(null, null);
+        List<ComercioConBeneficiosResponse> resultado = service.listarComerciosConBeneficios(null, null, "socio-1");
 
         assertThat(resultado).hasSize(1);
         assertThat(resultado.get(0).nombreComercial()).isEqualTo("Farmacia Del Sol");

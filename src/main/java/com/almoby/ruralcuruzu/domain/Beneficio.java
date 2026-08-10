@@ -90,6 +90,21 @@ public class Beneficio {
     @Field("pausado_manualmente")
     private boolean pausadoManualmente;
 
+    /**
+     * Cuántas veces puede usar este beneficio el mismo socio, en total, para
+     * siempre (no se resetea por día ni por mes: sigue siendo más parecido a
+     * un cupón que a un descuento recurrente). Antes era fijo en 1; ahora lo
+     * elige el comercio al crear o editar el beneficio.
+     * - {@code null}: beneficios creados antes de esta mejora (el campo no
+     *   existía). Se interpretan como 1 uso, para no cambiarles el
+     *   comportamiento de la noche a la mañana a promociones ya publicadas.
+     * - {@code 0}: sin límite, elegido a propósito por el comercio.
+     * - Cualquier entero positivo: ese límite exacto.
+     * Ver {@link #limiteUsosPorSocioEfectivo()} y {@link #puedeCanjear(long)}.
+     */
+    @Field("limite_usos_por_socio")
+    private Integer limiteUsosPorSocio;
+
     @Field("fecha_creacion")
     private Instant fechaCreacion;
 
@@ -130,5 +145,30 @@ public class Beneficio {
      */
     public EstadoBeneficio estadoEfectivo() {
         return estaVigenteHoy() ? EstadoBeneficio.ACTIVO : EstadoBeneficio.INACTIVO;
+    }
+
+    /** Normaliza {@code limiteUsosPorSocio}: nunca null, {@code 1} es el default legado. */
+    public int limiteUsosPorSocioEfectivo() {
+        return limiteUsosPorSocio == null ? 1 : limiteUsosPorSocio;
+    }
+
+    /** true si, dados los usos previos de ESE socio en particular, todavía puede canjearlo de nuevo. */
+    public boolean puedeCanjear(long usosPreviosDelSocio) {
+        int limite = limiteUsosPorSocioEfectivo();
+        return limite == 0 || usosPreviosDelSocio < limite;
+    }
+
+    /**
+     * Cuántos usos le quedan a ESE socio en particular, dados sus usos totales
+     * (incluyendo, si corresponde, el que se acaba de registrar). {@code null}
+     * significa "ilimitado" (limiteUsosPorSocioEfectivo() == 0): no hay un
+     * número de restantes que mostrar. Nunca negativo.
+     */
+    public Integer usosRestantes(long usosDelSocio) {
+        int limite = limiteUsosPorSocioEfectivo();
+        if (limite == 0) {
+            return null;
+        }
+        return (int) Math.max(0, limite - usosDelSocio);
     }
 }

@@ -7,6 +7,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
 
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -58,8 +59,10 @@ import lombok.extern.slf4j.Slf4j;
  *   rechaza directamente con un error (QR inválido, beneficio no vigente,
  *   beneficio de otro comercio, beneficio ya canjeado antes por ese socio)
  *   sin llegar a crear un registro.
- * - Cada beneficio se puede canjear una única vez por socio, para siempre
- *   (no por día): no es un descuento recurrente, es más parecido a un cupón.
+ * - Cuántas veces puede canjear un mismo socio un mismo beneficio lo elige el
+ *   comercio por beneficio (antes era fijo en 1 para siempre); sigue sin ser
+ *   un descuento recurrente por día/mes, es más parecido a un cupón con un
+ *   cupo de usos configurable. Ver Beneficio.limiteUsosPorSocio.
  */
 @Slf4j
 @Service
@@ -167,6 +170,7 @@ public class BeneficioServiceImpl implements BeneficioService {
                 .valor(request.valor())
                 .fechaInicioVigencia(request.fechaInicioVigencia())
                 .fechaFinVigencia(request.fechaFinVigencia())
+                .limiteUsosPorSocio(request.limiteUsosPorSocio())
                 .pausadoManualmente(false)
                 .fechaCreacion(ahora)
                 .fechaActualizacion(ahora)
@@ -214,6 +218,7 @@ public class BeneficioServiceImpl implements BeneficioService {
         beneficio.setValor(request.valor());
         beneficio.setFechaInicioVigencia(request.fechaInicioVigencia());
         beneficio.setFechaFinVigencia(request.fechaFinVigencia());
+        beneficio.setLimiteUsosPorSocio(request.limiteUsosPorSocio());
 
         // El campo crudo se auto-sincroniza con las fechas nuevas, salvo que el comercio lo
         // haya pausado a mano (pausadoManualmente): eso es una decisión explícita que una
@@ -287,8 +292,9 @@ public class BeneficioServiceImpl implements BeneficioService {
             throw new BeneficioNoVigenteException(beneficio.getId());
         }
 
-        if (historialBeneficioRepository.existsBySocioIdAndBeneficioId(socio.getId(), beneficio.getId())) {
-            throw new BeneficioYaCanjeadoException(beneficio.getTitulo());
+        long usosPreviosDelSocio = historialBeneficioRepository.countBySocioIdAndBeneficioId(socio.getId(), beneficio.getId());
+        if (!beneficio.puedeCanjear(usosPreviosDelSocio)) {
+            throw new BeneficioYaCanjeadoException(beneficio.getTitulo(), beneficio.limiteUsosPorSocioEfectivo());
         }
 
         HistorialBeneficio historial = HistorialBeneficio.builder()
@@ -307,25 +313,43 @@ public class BeneficioServiceImpl implements BeneficioService {
                 .estado(EstadoUsoBeneficio.USADO)
                 .fechaUso(Instant.now())
                 .build();
-        historialBeneficioRepository.save(historial);
+        // Red de contención además del chequeo de arriba: si dos canjes casi
+        // simultáneos leen el mismo conteo y ambos pasan puedeCanjear(), o si
+        // todavía quedara en la base un índice único viejo de una versión
+        // anterior de este flujo (cuando el límite era siempre 1), Mongo puede
+        // rechazar el insert. En vez de un 500 sin explicación, se lo traduce
+        // al mismo error de negocio que ya conoce el comercio.
+        try {
+            historialBeneficioRepository.save(historial);
+        } catch (DuplicateKeyException ex) {
+            log.warn("Comercio id={} intentó aplicar el beneficio id={} al socio id={} pero la base rechazó "
+                    + "el registro como duplicado (carrera entre canjes o índice legado)", comercioId, beneficio.getId(), socio.getId());
+            throw new BeneficioYaCanjeadoException(beneficio.getTitulo(), beneficio.limiteUsosPorSocioEfectivo());
+        }
 
         log.info("Comercio id={} aplicó el beneficio id={} al socio id={}", comercioId, beneficio.getId(), socio.getId());
 
-        return ValidarBeneficioResponse.from(historial);
+        // Incluye el canje recién registrado (usosPreviosDelSocio es antes de este uso).
+        long usosDelSocio = usosPreviosDelSocio + 1;
+        return ValidarBeneficioResponse.from(historial, beneficio, usosDelSocio);
     }
 
     @Override
-    public List<BeneficioResumenResponse> listarBeneficiosVigentes(String rubro, String busqueda) {
+    public List<BeneficioResumenResponse> listarBeneficiosVigentes(String rubro, String busqueda, String socioId) {
+        Map<String, Long> usosPorBeneficio = usosPorBeneficioDelSocio(socioId);
+
         return beneficioRepository.findByEstado(EstadoBeneficio.ACTIVO).stream()
                 .filter(Beneficio::estaVigenteHoy)
                 .filter(b -> coincideRubro(b.getComercioRubro(), rubro))
                 .filter(b -> coincideBusqueda(b, busqueda))
-                .map(BeneficioResumenResponse::from)
+                .map(b -> BeneficioResumenResponse.from(b, usosPorBeneficio.getOrDefault(b.getId(), 0L)))
                 .toList();
     }
 
     @Override
-    public List<ComercioConBeneficiosResponse> listarComerciosConBeneficios(String rubro, String busqueda) {
+    public List<ComercioConBeneficiosResponse> listarComerciosConBeneficios(String rubro, String busqueda, String socioId) {
+        Map<String, Long> usosPorBeneficio = usosPorBeneficioDelSocio(socioId);
+
         List<Beneficio> vigentes = beneficioRepository.findByEstado(EstadoBeneficio.ACTIVO).stream()
                 .filter(Beneficio::estaVigenteHoy)
                 .filter(b -> coincideRubro(b.getComercioRubro(), rubro))
@@ -342,12 +366,27 @@ public class BeneficioServiceImpl implements BeneficioService {
                     }
                     List<BeneficioResumenResponse> beneficiosDelComercio = vigentes.stream()
                             .filter(b -> b.getComercioId().equals(comercioId))
-                            .map(BeneficioResumenResponse::from)
+                            .map(b -> BeneficioResumenResponse.from(b, usosPorBeneficio.getOrDefault(b.getId(), 0L)))
                             .toList();
                     return ComercioConBeneficiosResponse.of(comercio, beneficiosDelComercio);
                 })
                 .filter(Objects::nonNull)
                 .toList();
+    }
+
+    /**
+     * Una sola consulta con TODO el historial del socio, en vez de una por
+     * beneficio listado (mismo patrón que listarBeneficiosDelComercio con
+     * usosEsteMesPorBeneficio). El volumen por socio es chico (documento 14:
+     * no es un descuento recurrente, así que no crece indefinidamente), así
+     * que no hace falta una query más acotada que la traiga filtrada por ids.
+     */
+    private Map<String, Long> usosPorBeneficioDelSocio(String socioId) {
+        if (socioId == null) {
+            return Map.of();
+        }
+        return historialBeneficioRepository.findBySocioIdOrderByFechaUsoDesc(socioId).stream()
+                .collect(Collectors.groupingBy(HistorialBeneficio::getBeneficioId, Collectors.counting()));
     }
 
     @Override

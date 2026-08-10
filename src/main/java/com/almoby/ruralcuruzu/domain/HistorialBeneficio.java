@@ -25,14 +25,16 @@ import lombok.Setter;
  * denormalizados acá porque es, ante todo, un comprobante histórico: si el
  * beneficio se edita o se pausa después, este registro no debe cambiar.
  *
- * Un mismo socio no puede canjear el mismo beneficio más de una vez (decisión
- * explícita: "una sola vez para siempre" por beneficio, no por día). El
- * índice único compuesto es la garantía a nivel de base de datos; la
- * verificación en {@code BeneficioServiceImpl} es la que le da al comercio
- * un error entendible en vez de una excepción de clave duplicada.
+ * Cuántas veces puede canjear un mismo socio el mismo beneficio lo decide el
+ * comercio por beneficio (ver {@link Beneficio#limiteUsosPorSocio}, antes
+ * era fijo en 1 para siempre). Por eso el índice de abajo NO es único: puede
+ * haber más de un registro por par (socio, beneficio) si el límite lo
+ * permite. Sigue siendo compuesto porque {@code BeneficioServiceImpl} lo
+ * consulta todo el tiempo por ese mismo par (contar usos previos del socio
+ * antes de autorizar un nuevo canje).
  */
 @Document(collection = "historial_beneficios")
-@CompoundIndex(name = "socio_beneficio_unico", def = "{'socio_id': 1, 'beneficio_id': 1}", unique = true)
+@CompoundIndex(name = "socio_beneficio_idx", def = "{'socio_id': 1, 'beneficio_id': 1}")
 @Getter
 @Setter
 @Builder

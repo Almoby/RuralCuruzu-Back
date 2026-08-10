@@ -39,9 +39,15 @@ public interface BeneficioService {
 
     // ---------- consulta del socio ----------
 
-    List<BeneficioResumenResponse> listarBeneficiosVigentes(String rubro, String busqueda);
+    /**
+     * {@code socioId} es el socio autenticado que hace la consulta: se usa
+     * solo para enriquecer cada beneficio con cuántas veces ESE socio ya lo
+     * usó y cuántas le quedan (BeneficioResumenResponse.usosDelSocio /
+     * usosRestantes), no afecta qué beneficios se listan ni el orden.
+     */
+    List<BeneficioResumenResponse> listarBeneficiosVigentes(String rubro, String busqueda, String socioId);
 
-    List<ComercioConBeneficiosResponse> listarComerciosConBeneficios(String rubro, String busqueda);
+    List<ComercioConBeneficiosResponse> listarComerciosConBeneficios(String rubro, String busqueda, String socioId);
 
     List<HistorialBeneficioResponse> listarHistorialDeSocio(String socioId);
 }

@@ -135,7 +135,11 @@ public class ComercioBeneficioController {
             description = "Flujo de uso (documento, sección 14): el socio muestra su QR, el comercio lo escanea y "
                     + "elige cuál de sus propios beneficios aplicar, junto con el ahorro real de esa compra. Si el "
                     + "QR es válido y el beneficio está vigente, queda un registro para el socio y el comercio. "
-                    + "Cada beneficio se puede canjear una única vez por socio (para siempre, no por día).")
+                    + "Cada beneficio tiene un límite de usos por socio configurable (para siempre, no por día): "
+                    + "por defecto 1, salvo que el comercio haya elegido otro número o \"ilimitado\" al "
+                    + "crear/editar el beneficio (ver limiteUsosPorSocio en el detalle del beneficio). La respuesta "
+                    + "incluye usosDelSocio (total de ese socio en ese beneficio, incluyendo este canje) y "
+                    + "usosRestantes (null si es ilimitado).")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Beneficio aplicado correctamente"),
             @ApiResponse(responseCode = "400", description = "El token del QR expiró (pedirle al socio que lo "
@@ -145,7 +149,8 @@ public class ComercioBeneficioController {
             @ApiResponse(responseCode = "404", description = "El token del QR no corresponde a ningún socio (o "
                     + "está manipulado), o el beneficio no existe (o no es propio)",
                     content = @Content(schema = @Schema(implementation = ApiErrorResponse.class))),
-            @ApiResponse(responseCode = "409", description = "Ese socio ya había canjeado este beneficio antes",
+            @ApiResponse(responseCode = "409", description = "Ese socio ya alcanzó el límite de usos configurado "
+                    + "para este beneficio",
                     content = @Content(schema = @Schema(implementation = ApiErrorResponse.class)))
     })
     @PostMapping("/canjear-beneficio")

@@ -43,29 +43,36 @@ public class SocioBeneficioController {
 
     @Operation(summary = "Listar beneficios vigentes (pestaña \"Promociones\")",
             description = "Solo beneficios ACTIVOS y dentro de su vigencia por fecha. Filtros opcionales por rubro "
-                    + "(ej. Farmacia, Gastronomía) y por texto libre (busca en título y nombre del comercio).")
+                    + "(ej. Farmacia, Gastronomía) y por texto libre (busca en título y nombre del comercio). Cada "
+                    + "beneficio incluye usosDelSocio (cuántas veces ya lo usó el socio autenticado) y "
+                    + "usosRestantes (null si el beneficio es ilimitado).")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Listado obtenido correctamente")
     })
     @GetMapping
     public ResponseEntity<List<BeneficioResumenResponse>> listarBeneficios(
             @RequestParam(required = false) String rubro,
-            @RequestParam(required = false) String busqueda) {
-        log.info("GET /api/socio/beneficios - rubro={} busqueda={}", rubro, busqueda);
-        return ResponseEntity.ok(beneficioService.listarBeneficiosVigentes(rubro, busqueda));
+            @RequestParam(required = false) String busqueda,
+            @AuthenticationPrincipal AuthenticatedUser socio) {
+        String socioId = socio.usuario().getRefId();
+        log.info("GET /api/socio/beneficios - rubro={} busqueda={} socioId={}", rubro, busqueda, socioId);
+        return ResponseEntity.ok(beneficioService.listarBeneficiosVigentes(rubro, busqueda, socioId));
     }
 
     @Operation(summary = "Listar comercios con beneficios vigentes (pestaña \"Comercios\")",
-            description = "Mismos filtros que el listado de beneficios, pero agrupado por comercio.")
+            description = "Mismos filtros que el listado de beneficios, pero agrupado por comercio. Cada beneficio "
+                    + "también incluye usosDelSocio/usosRestantes del socio autenticado.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Listado obtenido correctamente")
     })
     @GetMapping("/comercios-con-beneficios")
     public ResponseEntity<List<ComercioConBeneficiosResponse>> listarComercios(
             @RequestParam(required = false) String rubro,
-            @RequestParam(required = false) String busqueda) {
-        log.info("GET /api/socio/beneficios/comercios-con-beneficios - rubro={} busqueda={}", rubro, busqueda);
-        return ResponseEntity.ok(beneficioService.listarComerciosConBeneficios(rubro, busqueda));
+            @RequestParam(required = false) String busqueda,
+            @AuthenticationPrincipal AuthenticatedUser socio) {
+        String socioId = socio.usuario().getRefId();
+        log.info("GET /api/socio/beneficios/comercios-con-beneficios - rubro={} busqueda={} socioId={}", rubro, busqueda, socioId);
+        return ResponseEntity.ok(beneficioService.listarComerciosConBeneficios(rubro, busqueda, socioId));
     }
 
     @Operation(summary = "Ver mi historial de beneficios usados", description = "Documento, secciones 14.4 y 19.3. Más recientes primero.")
