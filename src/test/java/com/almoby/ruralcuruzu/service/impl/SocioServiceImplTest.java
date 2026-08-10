@@ -50,6 +50,7 @@ import com.almoby.ruralcuruzu.exception.EmailYaRegistradoException;
 import com.almoby.ruralcuruzu.exception.SocioNoEncontradoException;
 import com.almoby.ruralcuruzu.repository.SocioRepository;
 import com.almoby.ruralcuruzu.repository.UsuarioRepository;
+import com.almoby.ruralcuruzu.security.jwt.CodigoQrCortoService;
 import com.almoby.ruralcuruzu.security.jwt.QrTokenGenerado;
 import com.almoby.ruralcuruzu.security.jwt.QrTokenService;
 import com.almoby.ruralcuruzu.service.CuentaAccesoService;
@@ -86,12 +87,16 @@ class SocioServiceImplTest {
     @Mock
     private CuotaService cuotaService;
 
+    // Instancia real (no mock): es puro cálculo en memoria sin dependencias externas,
+    // así que no hace falta mockearla para probar el pass-through de obtenerMiQr.
+    private final CodigoQrCortoService codigoQrCortoService = new CodigoQrCortoService();
+
     private SocioServiceImpl service;
 
     @BeforeEach
     void setUp() {
         service = new SocioServiceImpl(socioRepository, usuarioRepository, secuenciaService, cuentaAccesoService,
-                emailService, estadoQrService, qrTokenService, cuotaService);
+                emailService, estadoQrService, qrTokenService, codigoQrCortoService, cuotaService);
     }
 
     private SolicitudSocio solicitudAprobada() {
@@ -384,6 +389,7 @@ class SocioServiceImplTest {
         MiQrResponse resultado = service.obtenerMiQr("socio-1");
 
         assertThat(resultado.token()).isEqualTo("token-jwt-abc");
+        assertThat(resultado.codigoQr()).matches("^[23456789abcdefghjkmnpqrstvwxyz]{4}(-[23456789abcdefghjkmnpqrstvwxyz]{4}){3}$");
         assertThat(resultado.expiraEn()).isEqualTo(expiraEn);
         assertThat(resultado.numeroSocio()).isEqualTo("SOC-000001");
         assertThat(resultado.nombre()).isEqualTo("García, Juan Carlos");
@@ -409,6 +415,7 @@ class SocioServiceImplTest {
 
         assertThat(primero.token()).isEqualTo("token-1");
         assertThat(segundo.token()).isEqualTo("token-2");
+        assertThat(primero.codigoQr()).isNotEqualTo(segundo.codigoQr());
         verify(qrTokenService, times(2)).generar("socio-1");
     }
 

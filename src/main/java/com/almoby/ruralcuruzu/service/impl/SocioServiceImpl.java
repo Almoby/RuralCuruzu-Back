@@ -28,6 +28,7 @@ import com.almoby.ruralcuruzu.exception.EmailYaRegistradoException;
 import com.almoby.ruralcuruzu.exception.SocioNoEncontradoException;
 import com.almoby.ruralcuruzu.repository.SocioRepository;
 import com.almoby.ruralcuruzu.repository.UsuarioRepository;
+import com.almoby.ruralcuruzu.security.jwt.CodigoQrCortoService;
 import com.almoby.ruralcuruzu.security.jwt.QrTokenGenerado;
 import com.almoby.ruralcuruzu.security.jwt.QrTokenService;
 import com.almoby.ruralcuruzu.service.CuentaAccesoService;
@@ -65,6 +66,7 @@ public class SocioServiceImpl implements SocioService {
     private final EmailService emailService;
     private final EstadoQrService estadoQrService;
     private final QrTokenService qrTokenService;
+    private final CodigoQrCortoService codigoQrCortoService;
     private final CuotaService cuotaService;
 
     public SocioServiceImpl(SocioRepository socioRepository,
@@ -74,6 +76,7 @@ public class SocioServiceImpl implements SocioService {
                              EmailService emailService,
                              EstadoQrService estadoQrService,
                              QrTokenService qrTokenService,
+                             CodigoQrCortoService codigoQrCortoService,
                              CuotaService cuotaService) {
         this.socioRepository = socioRepository;
         this.usuarioRepository = usuarioRepository;
@@ -82,6 +85,7 @@ public class SocioServiceImpl implements SocioService {
         this.emailService = emailService;
         this.estadoQrService = estadoQrService;
         this.qrTokenService = qrTokenService;
+        this.codigoQrCortoService = codigoQrCortoService;
         this.cuotaService = cuotaService;
     }
 
@@ -188,8 +192,10 @@ public class SocioServiceImpl implements SocioService {
         Socio socio = buscarOFallar(socioId);
         EstadoQrResponse estadoQr = estadoQrService.calcularEstado(socio);
         QrTokenGenerado token = qrTokenService.generar(socio.getId());
-        return new MiQrResponse(token.token(), token.expiraEn(), socio.getNumeroSocio(), socio.nombreParaMostrar(),
-                socio.getCategoria(), estadoQr.estado(), estadoQr.mensaje(), estadoQr.fechaValidez(), estadoQr.ultimoPago());
+        String codigoQr = codigoQrCortoService.generar(token.token(), token.expiraEn());
+        return new MiQrResponse(token.token(), codigoQr, token.expiraEn(), socio.getNumeroSocio(),
+                socio.nombreParaMostrar(), socio.getCategoria(), estadoQr.estado(), estadoQr.mensaje(),
+                estadoQr.fechaValidez(), estadoQr.ultimoPago());
     }
 
     @Override

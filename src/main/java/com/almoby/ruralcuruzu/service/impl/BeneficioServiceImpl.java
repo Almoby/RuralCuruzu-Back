@@ -38,6 +38,7 @@ import com.almoby.ruralcuruzu.repository.ComercioRepository;
 import com.almoby.ruralcuruzu.repository.HistorialBeneficioRepository;
 import com.almoby.ruralcuruzu.repository.SocioRepository;
 import com.almoby.ruralcuruzu.repository.TipoBeneficioCatalogoRepository;
+import com.almoby.ruralcuruzu.security.jwt.CodigoQrCortoService;
 import com.almoby.ruralcuruzu.security.jwt.QrTokenService;
 import com.almoby.ruralcuruzu.service.BeneficioService;
 import com.almoby.ruralcuruzu.service.EstadoQrService;
@@ -70,6 +71,7 @@ public class BeneficioServiceImpl implements BeneficioService {
     private final SocioRepository socioRepository;
     private final EstadoQrService estadoQrService;
     private final QrTokenService qrTokenService;
+    private final CodigoQrCortoService codigoQrCortoService;
     private final TipoBeneficioCatalogoRepository tipoBeneficioCatalogoRepository;
 
     public BeneficioServiceImpl(BeneficioRepository beneficioRepository,
@@ -78,6 +80,7 @@ public class BeneficioServiceImpl implements BeneficioService {
                                  SocioRepository socioRepository,
                                  EstadoQrService estadoQrService,
                                  QrTokenService qrTokenService,
+                                 CodigoQrCortoService codigoQrCortoService,
                                  TipoBeneficioCatalogoRepository tipoBeneficioCatalogoRepository) {
         this.beneficioRepository = beneficioRepository;
         this.historialBeneficioRepository = historialBeneficioRepository;
@@ -86,6 +89,7 @@ public class BeneficioServiceImpl implements BeneficioService {
         this.tipoBeneficioCatalogoRepository = tipoBeneficioCatalogoRepository;
         this.estadoQrService = estadoQrService;
         this.qrTokenService = qrTokenService;
+        this.codigoQrCortoService = codigoQrCortoService;
     }
 
     /**
@@ -260,9 +264,16 @@ public class BeneficioServiceImpl implements BeneficioService {
     @Override
     public ValidarBeneficioResponse validarYUsarBeneficio(String comercioId, String usuarioComercioId,
                                                             ValidarBeneficioRequest request) {
+        // El campo codigoQr acepta dos formas equivalentes del mismo dato: el JWT
+        // largo (lo que trae el escaneo de cámara) o el código corto que el socio
+        // puede leer/pegar a mano si el escaneo falla (ver CodigoQrCortoService).
+        // Acá se resuelve cualquiera de las dos a "el JWT real" antes de seguir,
+        // así el resto del flujo de canje no necesita saber cuál de las dos llegó.
+        String tokenReal = codigoQrCortoService.resolverOMismo(request.codigoQr());
+
         // El token del QR (documento 15.1: "no debe ser una imagen fija permanente")
         // vence a los pocos segundos; si es válido, devuelve el id del socio dueño.
-        String socioId = qrTokenService.extraerSocioId(request.codigoQr());
+        String socioId = qrTokenService.extraerSocioId(tokenReal);
         Socio socio = socioRepository.findById(socioId)
                 .orElseThrow(CodigoQrInvalidoException::new);
 

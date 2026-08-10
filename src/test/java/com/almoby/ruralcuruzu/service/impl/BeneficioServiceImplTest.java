@@ -60,6 +60,7 @@ import com.almoby.ruralcuruzu.repository.ComercioRepository;
 import com.almoby.ruralcuruzu.repository.HistorialBeneficioRepository;
 import com.almoby.ruralcuruzu.repository.SocioRepository;
 import com.almoby.ruralcuruzu.repository.TipoBeneficioCatalogoRepository;
+import com.almoby.ruralcuruzu.security.jwt.CodigoQrCortoService;
 import com.almoby.ruralcuruzu.security.jwt.QrTokenService;
 import com.almoby.ruralcuruzu.service.EstadoQrService;
 
@@ -81,12 +82,18 @@ class BeneficioServiceImplTest {
     @Mock
     private TipoBeneficioCatalogoRepository tipoBeneficioCatalogoRepository;
 
+    // Instancia real (no mock): es puro cálculo en memoria sin dependencias externas.
+    // Con esto, cualquier codigoQr "de mentira" que usan los tests (ej. "qr-abc-123")
+    // no matchea el formato de código corto y se devuelve tal cual (pass-through),
+    // que es exactamente el comportamiento real para un JWT escaneado por cámara.
+    private final CodigoQrCortoService codigoQrCortoService = new CodigoQrCortoService();
+
     private BeneficioServiceImpl service;
 
     @BeforeEach
     void setUp() {
         service = new BeneficioServiceImpl(beneficioRepository, historialBeneficioRepository, comercioRepository,
-                socioRepository, estadoQrService, qrTokenService, tipoBeneficioCatalogoRepository);
+                socioRepository, estadoQrService, qrTokenService, codigoQrCortoService, tipoBeneficioCatalogoRepository);
         // Default: "tipo-1" resuelve a un tipo activo, salvo que un test lo pise (evita
         // repetir este stub en cada test de crear/actualizar que no lo pone a prueba).
         lenient().when(tipoBeneficioCatalogoRepository.findById("tipo-1")).thenReturn(Optional.of(tipoBeneficioActivo()));
@@ -444,6 +451,39 @@ class BeneficioServiceImplTest {
         assertThat(captor.getValue().getEstado()).isEqualTo(EstadoUsoBeneficio.USADO);
         assertThat(captor.getValue().getSocioId()).isEqualTo("socio-1");
         assertThat(captor.getValue().getUsuarioComercioId()).isEqualTo("usuario-comercio-1");
+    }
+
+    @Test
+    void validarYUsarBeneficio_conCodigoCortoEnVezDelJwt_resuelveAlMismoSocioYCanjea() {
+        Beneficio beneficio = beneficioVigente("beneficio-1", "comercio-1");
+        String codigoCorto = codigoQrCortoService.generar("jwt-real-del-socio", Instant.now().plusSeconds(60));
+        when(qrTokenService.extraerSocioId("jwt-real-del-socio")).thenReturn("socio-1");
+        when(socioRepository.findById("socio-1")).thenReturn(Optional.of(socio()));
+        when(beneficioRepository.findById("beneficio-1")).thenReturn(Optional.of(beneficio));
+        when(historialBeneficioRepository.existsBySocioIdAndBeneficioId("socio-1", "beneficio-1")).thenReturn(false);
+        when(historialBeneficioRepository.save(any(HistorialBeneficio.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        // El comercio pegó el código corto (no escaneó), en vez del JWT largo.
+        ValidarBeneficioRequest request = new ValidarBeneficioRequest(codigoCorto, "beneficio-1", new BigDecimal("450.00"));
+
+        ValidarBeneficioResponse response = service.validarYUsarBeneficio("comercio-1", "usuario-comercio-1", request);
+
+        assertThat(response.mensaje()).isEqualTo("Beneficio aplicado con éxito");
+        verify(qrTokenService).extraerSocioId("jwt-real-del-socio");
+    }
+
+    @Test
+    void validarYUsarBeneficio_codigoCortoInexistente_lanzaExcepcionYNoLlegaAValidarElJwt() {
+        // Tiene la FORMA de un código corto (16 caracteres del alfabeto, agrupados),
+        // pero nunca fue generado -> no está en el mapa interno.
+        ValidarBeneficioRequest request =
+                new ValidarBeneficioRequest("ZZZZ-ZZZZ-ZZZZ-ZZZZ", "beneficio-1", BigDecimal.TEN);
+
+        assertThatThrownBy(() -> service.validarYUsarBeneficio("comercio-1", "usuario-comercio-1", request))
+                .isInstanceOf(CodigoQrInvalidoException.class);
+
+        verify(qrTokenService, never()).extraerSocioId(anyString());
+        verify(socioRepository, never()).findById(anyString());
     }
 
     @Test

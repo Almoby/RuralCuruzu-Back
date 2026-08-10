@@ -13,10 +13,16 @@ import com.almoby.ruralcuruzu.enums.EstadoQr;
  * refrescar el QR en pantalla. {@code estado}/{@code mensaje} también se
  * recalculan en cada consulta según la situación actual del socio (cuota,
  * suspensión, baja, bloqueo — ver EstadoQrService).
+ *
+ * {@code codigoQr} representa exactamente al mismo {@code token} (mismo
+ * socio, misma expiración), pero en un formato corto pensado para que el
+ * socio lo lea o tipee a mano en el campo "Pegá el código del QR" del
+ * comercio, si el escaneo con cámara no anduvo (ver CodigoQrCortoService).
  */
 public record MiQrResponse(
 
         String token,
+        String codigoQr,
         Instant expiraEn,
         String numeroSocio,
         String nombre,

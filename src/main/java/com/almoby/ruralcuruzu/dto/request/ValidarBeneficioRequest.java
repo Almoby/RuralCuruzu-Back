@@ -16,8 +16,10 @@ import jakarta.validation.constraints.PositiveOrZero;
  */
 public record ValidarBeneficioRequest(
 
-        @Schema(description = "Token del QR mostrado por el socio (documento 15.1: vence a los pocos segundos, "
-                + "no es un código fijo)")
+        @Schema(description = "Código QR del socio: acepta el JWT largo que trae el escaneo de cámara, o el "
+                + "código corto (formato xxxx-xxxx-xxxx-xxxx, no distingue mayúsculas/minúsculas) que el socio "
+                + "puede tipear/pegar a mano si el escaneo falla — ambos representan el mismo token y vencen a "
+                + "los pocos segundos, no es un código fijo (documento 15.1)")
         @NotBlank(message = "El código QR es obligatorio")
         String codigoQr,
 
