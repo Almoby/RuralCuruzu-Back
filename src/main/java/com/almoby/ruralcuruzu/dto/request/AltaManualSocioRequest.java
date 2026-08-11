@@ -77,13 +77,12 @@ public record AltaManualSocioRequest(
         @Email(message = "El email no tiene un formato válido")
         String email,
 
-        @Schema(description = "Nombre del establecimiento o de la ocupación", example = "Farmacia Central")
-        @NotBlank(message = "El nombre del establecimiento u ocupación es obligatorio")
+        @Schema(description = "Nombre del establecimiento o de la ocupación, si tiene. Opcional: no todo socio "
+                + "(ej. un adherente) tiene un establecimiento propio", example = "Farmacia Central")
         String nombreEstablecimiento,
 
-        @Schema(description = "Dirección del establecimiento, si es distinta de la dirección personal",
-                example = "Ruta 123 km 4")
-        @NotBlank(message = "La dirección del establecimiento es obligatoria")
+        @Schema(description = "Dirección del establecimiento, si es distinta de la dirección personal. Opcional, "
+                + "igual que nombreEstablecimiento", example = "Ruta 123 km 4")
         String direccionEstablecimiento,
 
         @Schema(description = "Solo si tipoPersona es JURIDICA: nombre de la persona responsable",
