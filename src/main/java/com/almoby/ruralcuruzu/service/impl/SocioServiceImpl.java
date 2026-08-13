@@ -21,6 +21,7 @@ import com.almoby.ruralcuruzu.dto.response.SocioActualizadoResponse;
 import com.almoby.ruralcuruzu.dto.response.SocioCreadoResponse;
 import com.almoby.ruralcuruzu.dto.response.SocioResponse;
 import com.almoby.ruralcuruzu.dto.response.SocioResumenResponse;
+import com.almoby.ruralcuruzu.enums.CategoriaSocio;
 import com.almoby.ruralcuruzu.enums.EstadoSocio;
 import com.almoby.ruralcuruzu.enums.Rol;
 import com.almoby.ruralcuruzu.enums.TipoPersona;
@@ -172,12 +173,15 @@ public class SocioServiceImpl implements SocioService {
     }
 
     @Override
-    public List<SocioResumenResponse> listarSocios(EstadoSocio estado) {
+    public List<SocioResumenResponse> listarSocios(EstadoSocio estado, CategoriaSocio categoria) {
         List<Socio> socios = estado != null
                 ? socioRepository.findByEstado(estado)
                 : socioRepository.findAll();
 
-        return socios.stream().map(SocioResumenResponse::from).toList();
+        return socios.stream()
+                .filter(socio -> categoria == null || socio.getCategoria() == categoria)
+                .map(SocioResumenResponse::from)
+                .toList();
     }
 
     @Override

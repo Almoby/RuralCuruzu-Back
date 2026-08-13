@@ -22,6 +22,7 @@ import com.almoby.ruralcuruzu.dto.response.SocioActualizadoResponse;
 import com.almoby.ruralcuruzu.dto.response.SocioCreadoResponse;
 import com.almoby.ruralcuruzu.dto.response.SocioResponse;
 import com.almoby.ruralcuruzu.dto.response.SocioResumenResponse;
+import com.almoby.ruralcuruzu.enums.CategoriaSocio;
 import com.almoby.ruralcuruzu.enums.EstadoSocio;
 import com.almoby.ruralcuruzu.exception.ApiErrorResponse;
 import com.almoby.ruralcuruzu.security.AuthenticatedUser;
@@ -80,16 +81,18 @@ public class SocioAdminController {
 
     @Operation(summary = "Listar socios",
             description = "Listado completo (sin paginación), opcionalmente filtrado por estado (ACTIVO, "
-                    + "INACTIVO, DADO_DE_BAJA). Sin filtro, devuelve todos. Usado, entre otras cosas, para poblar "
-                    + "el select de socio del modal \"Registrar pago\" de Cuotas.")
+                    + "INACTIVO, DADO_DE_BAJA) y/o categoría (ACTIVO, ADHERENTE), combinables. Sin filtros, "
+                    + "devuelve todos. Usado, entre otras cosas, para poblar el select de socio del modal "
+                    + "\"Registrar pago\" de Cuotas y para separar Activos/Adherentes en Gestión de Socios.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Listado obtenido correctamente")
     })
     @GetMapping
     public ResponseEntity<List<SocioResumenResponse>> listarSocios(
-            @RequestParam(required = false) EstadoSocio estado) {
-        log.info("GET /api/admin/socios - estado={}", estado);
-        return ResponseEntity.ok(socioService.listarSocios(estado));
+            @RequestParam(required = false) EstadoSocio estado,
+            @RequestParam(required = false) CategoriaSocio categoria) {
+        log.info("GET /api/admin/socios - estado={} categoria={}", estado, categoria);
+        return ResponseEntity.ok(socioService.listarSocios(estado, categoria));
     }
 
     @Operation(summary = "Ver el detalle de un socio",

@@ -13,6 +13,7 @@ import com.almoby.ruralcuruzu.dto.response.SocioActualizadoResponse;
 import com.almoby.ruralcuruzu.dto.response.SocioCreadoResponse;
 import com.almoby.ruralcuruzu.dto.response.SocioResponse;
 import com.almoby.ruralcuruzu.dto.response.SocioResumenResponse;
+import com.almoby.ruralcuruzu.enums.CategoriaSocio;
 import com.almoby.ruralcuruzu.enums.EstadoSocio;
 
 /**
@@ -42,10 +43,12 @@ public interface SocioService {
     SocioCreadoResponse crearSocioManual(AltaManualSocioRequest request, String adminId, String adminNombre);
 
     /**
-     * Listado completo (sin paginación), opcionalmente filtrado por estado.
-     * Usado, entre otras cosas, para poblar el select de socio del panel de Cuotas.
+     * Listado completo (sin paginación), opcionalmente filtrado por estado
+     * y/o categoría (ambos combinables). Usado, entre otras cosas, para
+     * poblar el select de socio del panel de Cuotas y para separar
+     * ACTIVO/ADHERENTE en Gestión de Socios.
      */
-    List<SocioResumenResponse> listarSocios(EstadoSocio estado);
+    List<SocioResumenResponse> listarSocios(EstadoSocio estado, CategoriaSocio categoria);
 
     SocioResponse obtenerSocioPorId(String id);
 

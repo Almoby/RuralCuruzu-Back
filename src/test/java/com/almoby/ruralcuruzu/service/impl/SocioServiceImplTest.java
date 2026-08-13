@@ -329,7 +329,7 @@ class SocioServiceImplTest {
                 socioActivo("socio-1", "SOC-000001", "García, Juan Carlos"),
                 socioActivo("socio-2", "SOC-000002", "Pérez, Ana")));
 
-        List<SocioResumenResponse> resultado = service.listarSocios(null);
+        List<SocioResumenResponse> resultado = service.listarSocios(null, null);
 
         assertThat(resultado).hasSize(2);
         assertThat(resultado.get(0).numeroSocio()).isEqualTo("SOC-000001");
@@ -342,10 +342,34 @@ class SocioServiceImplTest {
         when(socioRepository.findByEstado(EstadoSocio.INACTIVO)).thenReturn(
                 List.of(socioActivo("socio-3", "SOC-000003", "López, Marta")));
 
-        List<SocioResumenResponse> resultado = service.listarSocios(EstadoSocio.INACTIVO);
+        List<SocioResumenResponse> resultado = service.listarSocios(EstadoSocio.INACTIVO, null);
 
         assertThat(resultado).hasSize(1);
         assertThat(resultado.get(0).numeroSocio()).isEqualTo("SOC-000003");
+    }
+
+    @Test
+    void listarSocios_conFiltroDeCategoria_dejaSoloLaCategoriaPedida() {
+        Socio activo = socioActivo("socio-1", "SOC-000001", "García, Juan Carlos");
+        Socio adherente = socioActivo("socio-2", "SOC-000002", "Pérez, Ana");
+        adherente.setCategoria(CategoriaSocio.ADHERENTE);
+        when(socioRepository.findAll()).thenReturn(List.of(activo, adherente));
+
+        List<SocioResumenResponse> resultado = service.listarSocios(null, CategoriaSocio.ADHERENTE);
+
+        assertThat(resultado).hasSize(1);
+        assertThat(resultado.get(0).numeroSocio()).isEqualTo("SOC-000002");
+    }
+
+    @Test
+    void listarSocios_conFiltroDeEstadoYCategoria_combinaAmbos() {
+        when(socioRepository.findByEstado(EstadoSocio.ACTIVO)).thenReturn(List.of(
+                socioActivo("socio-1", "SOC-000001", "García, Juan Carlos"),
+                socioActivo("socio-2", "SOC-000002", "Pérez, Ana")));
+
+        List<SocioResumenResponse> resultado = service.listarSocios(EstadoSocio.ACTIVO, CategoriaSocio.ACTIVO);
+
+        assertThat(resultado).hasSize(2);
     }
 
     @Test

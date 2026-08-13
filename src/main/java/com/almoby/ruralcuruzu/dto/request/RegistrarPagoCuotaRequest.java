@@ -14,8 +14,11 @@ import jakarta.validation.constraints.NotNull;
  * Registro manual de un pago hecho por el admin (documento, sección 10.4;
  * ajustado al Figma). El admin elige un socio y uno o varios períodos
  * (multi-select de meses, ej. pagar agosto + septiembre + octubre juntos, o
- * un año entero): cada período debe tener ya una cuota generada para ese
- * socio, y todas quedan PAGADA con los mismos datos de pago.
+ * un año entero): si alguno de esos períodos todavía no tiene una cuota
+ * generada para ese socio (pago adelantado, ej. paga 3 meses antes de que
+ * corra la generación mensual), se genera en el momento con la misma regla
+ * de cuota vigente para su categoría. Todas quedan PAGADA con los mismos
+ * datos de pago.
  *
  * <p>No se pide el importe acá: cada cuota ya tiene su propio importe fijado
  * al generarse (documento 10.2, tomado de la regla de cuota vigente para la

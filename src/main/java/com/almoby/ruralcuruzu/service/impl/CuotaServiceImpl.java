@@ -54,6 +54,7 @@ import com.almoby.ruralcuruzu.exception.ArchivoInvalidoException;
 import com.almoby.ruralcuruzu.exception.CuotaEstadoInvalidoException;
 import com.almoby.ruralcuruzu.exception.CuotaNoEncontradaException;
 import com.almoby.ruralcuruzu.exception.PagoNoEncontradoException;
+import com.almoby.ruralcuruzu.exception.ReglaCuotaNoEncontradaException;
 import com.almoby.ruralcuruzu.exception.SocioNoEncontradoException;
 import com.almoby.ruralcuruzu.repository.CuotaRepository;
 import com.almoby.ruralcuruzu.repository.EjecucionGeneracionCuotasRepository;
@@ -96,6 +97,12 @@ import lombok.extern.slf4j.Slf4j;
  *   subido desde el sistema), nadie del lado del club vio ese pago todavía,
  *   así que sí o sí pasa por revisión. Por eso informarPago solo acepta
  *   MedioPago.TRANSFERENCIA: es la única forma de pagar a distancia.
+ * - Pago adelantado (registrarPago): si el admin elige un período que todavía
+ *   no tiene cuota generada para ese socio, se genera al vuelo con la misma
+ *   regla que generarCuotas, en vez de exigir que el admin corra "Generar
+ *   cuotas" para todo el club mes a mes antes de poder cobrarle a uno solo
+ *   por adelantado (ver buscarOGenerarCuotaDeSocioEnPeriodo). Mismo requisito
+ *   que la generación normal: el socio tiene que estar ACTIVO.
  * - VENCIDA se aplica con un job diario (marcarCuotasVencidas), no al vuelo.
  * - RN-17: el pago es su propia entidad de base de datos ({@link Pago}, no
  *   embebido en Cuota): una misma cuota puede tener más de un Pago a lo
@@ -459,8 +466,11 @@ public class CuotaServiceImpl implements CuotaService {
 
     @Override
     public RegistrarPagoResponse registrarPago(RegistrarPagoCuotaRequest request, String adminId, String adminNombre) {
+        Socio socio = socioRepository.findById(request.socioId())
+                .orElseThrow(() -> new SocioNoEncontradoException(request.socioId()));
+
         List<Cuota> cuotas = request.periodos().stream()
-                .map(periodo -> buscarCuotaDeSocioEnPeriodo(request.socioId(), periodo))
+                .map(periodo -> buscarOGenerarCuotaDeSocioEnPeriodo(socio, periodo))
                 .toList();
 
         List<CuotaResponse> respuestas = new ArrayList<>();
@@ -893,9 +903,41 @@ public class CuotaServiceImpl implements CuotaService {
         return cuotaRepository.findById(id).orElseThrow(() -> new CuotaNoEncontradaException(id));
     }
 
-    private Cuota buscarCuotaDeSocioEnPeriodo(String socioId, String periodo) {
-        return cuotaRepository.findBySocioIdAndPeriodo(socioId, periodo)
-                .orElseThrow(() -> CuotaNoEncontradaException.paraSocioYPeriodo(socioId, periodo));
+    /**
+     * Pago adelantado (documento 10.4, ajustado al Figma: "pagar agosto +
+     * septiembre + octubre juntos, o un año entero"): si el período todavía
+     * no tiene una cuota generada para este socio (ej. el cron mensual
+     * todavía no llegó a ese mes), se genera acá mismo con la misma regla que
+     * usa la generación normal (generarCuotas/crearCuotaPendiente), en vez de
+     * devolver 404 y obligar al admin a primero correr "Generar cuotas" para
+     * todo el club, mes a mes, antes de poder cobrarle por adelantado a un
+     * único socio. Solo aplica si el socio está ACTIVO (mismo requisito que
+     * la generación normal, ver generarCuotas): a un socio INACTIVO o
+     * DADO_DE_BAJA se lo sigue rechazando con el mismo 404 de siempre, porque
+     * la generación normal tampoco le generaría una cuota.
+     */
+    private Cuota buscarOGenerarCuotaDeSocioEnPeriodo(Socio socio, String periodo) {
+        return cuotaRepository.findBySocioIdAndPeriodo(socio.getId(), periodo)
+                .orElseGet(() -> {
+                    if (socio.getEstado() != EstadoSocio.ACTIVO) {
+                        throw CuotaNoEncontradaException.paraSocioYPeriodo(socio.getId(), periodo);
+                    }
+                    return generarCuotaParaPagoAdelantado(socio, periodo);
+                });
+    }
+
+    private Cuota generarCuotaParaPagoAdelantado(Socio socio, String periodo) {
+        YearMonth periodoYm = YearMonth.parse(periodo);
+        ReglaCuota regla = reglaCuotaRepository.findByCategoriaAplicable(socio.getCategoria())
+                .orElseThrow(() -> new ReglaCuotaNoEncontradaException(socio.getCategoria()));
+
+        Cuota cuota = crearCuotaPendiente(socio, regla, periodoYm, periodo);
+        cuotaRepository.save(cuota);
+
+        log.info("Cuota id={} generada al vuelo para pago adelantado (socio id={} periodo={})",
+                cuota.getId(), socio.getId(), periodo);
+
+        return cuota;
     }
 
     private List<String> idsDe(List<Cuota> cuotas) {

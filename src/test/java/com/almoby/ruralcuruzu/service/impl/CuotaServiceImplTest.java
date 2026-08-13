@@ -67,6 +67,7 @@ import com.almoby.ruralcuruzu.exception.ArchivoInvalidoException;
 import com.almoby.ruralcuruzu.exception.CuotaEstadoInvalidoException;
 import com.almoby.ruralcuruzu.exception.CuotaNoEncontradaException;
 import com.almoby.ruralcuruzu.exception.PagoNoEncontradoException;
+import com.almoby.ruralcuruzu.exception.ReglaCuotaNoEncontradaException;
 import com.almoby.ruralcuruzu.exception.SocioNoEncontradoException;
 import com.almoby.ruralcuruzu.repository.CuotaRepository;
 import com.almoby.ruralcuruzu.repository.EjecucionGeneracionCuotasRepository;
@@ -427,7 +428,9 @@ class CuotaServiceImplTest {
     void registrarPago_conCuotaYaPagada_lanzaExcepcion() {
         Cuota cuota = cuotaPendiente("cuota-1", "socio-1");
         cuota.setEstado(EstadoCuota.PAGADA);
+        Socio socio = socioActivo("socio-1", "SOC-000001", CategoriaSocio.ACTIVO);
         when(cuotaRepository.findBySocioIdAndPeriodo("socio-1", "2026-07")).thenReturn(Optional.of(cuota));
+        when(socioRepository.findById("socio-1")).thenReturn(Optional.of(socio));
 
         RegistrarPagoCuotaRequest request = new RegistrarPagoCuotaRequest(
                 "socio-1", List.of("2026-07"), LocalDate.of(2026, 7, 5),
@@ -435,6 +438,19 @@ class CuotaServiceImplTest {
 
         assertThatThrownBy(() -> service.registrarPago(request, "admin-1", "Admin Uno"))
                 .isInstanceOf(CuotaEstadoInvalidoException.class);
+    }
+
+    @Test
+    void registrarPago_socioInexistente_lanzaExcepcion() {
+        when(socioRepository.findById("no-existe")).thenReturn(Optional.empty());
+
+        RegistrarPagoCuotaRequest request = new RegistrarPagoCuotaRequest(
+                "no-existe", List.of("2026-07"), LocalDate.of(2026, 7, 5),
+                MedioPago.EFECTIVO, null, null);
+
+        assertThatThrownBy(() -> service.registrarPago(request, "admin-1", "Admin Uno"))
+                .isInstanceOf(SocioNoEncontradoException.class);
+        verify(cuotaRepository, never()).findBySocioIdAndPeriodo(anyString(), anyString());
     }
 
     @Test
@@ -486,16 +502,71 @@ class CuotaServiceImplTest {
         assertThat(response.montoTotal()).isEqualByComparingTo("33000.00");
     }
 
+    // ---------- registrarPago: pago adelantado (período sin cuota generada todavía) ----------
+
     @Test
-    void registrarPago_conPeriodoSinCuotaGenerada_lanzaExcepcion() {
-        when(cuotaRepository.findBySocioIdAndPeriodo("socio-1", "2026-07")).thenReturn(Optional.empty());
+    void registrarPago_conPeriodoSinCuotaGenerada_ySocioActivo_laGeneraAlVueloYLaPaga() {
+        Socio socio = socioActivo("socio-1", "SOC-000001", CategoriaSocio.ACTIVO);
+        when(socioRepository.findById("socio-1")).thenReturn(Optional.of(socio));
+        when(cuotaRepository.findBySocioIdAndPeriodo("socio-1", "2026-09")).thenReturn(Optional.empty());
+        when(reglaCuotaRepository.findByCategoriaAplicable(CategoriaSocio.ACTIVO))
+                .thenReturn(Optional.of(reglaCuota(CategoriaSocio.ACTIVO, "Cuota de socio activo", "15000.00", 10)));
+        when(cuotaRepository.save(any(Cuota.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(cuotaRepository.findBySocioId("socio-1")).thenReturn(List.of());
 
         RegistrarPagoCuotaRequest request = new RegistrarPagoCuotaRequest(
-                "socio-1", List.of("2026-07"), LocalDate.of(2026, 7, 5),
+                "socio-1", List.of("2026-09"), LocalDate.of(2026, 7, 5),
+                MedioPago.TRANSFERENCIA, "COMP-1", "paga adelantado");
+
+        RegistrarPagoResponse response = service.registrarPago(request, "admin-1", "Admin Uno");
+
+        assertThat(response.cuotas()).hasSize(1);
+        assertThat(response.montoTotal()).isEqualByComparingTo("15000.00");
+        assertThat(response.cuotas().get(0).estado()).isEqualTo(EstadoCuota.PAGADA);
+        assertThat(response.cuotas().get(0).periodo()).isEqualTo("2026-09");
+
+        ArgumentCaptor<Cuota> cuotaCaptor = ArgumentCaptor.forClass(Cuota.class);
+        verify(cuotaRepository, times(2)).save(cuotaCaptor.capture());
+        Cuota cuotaGuardada = cuotaCaptor.getAllValues().get(0);
+        assertThat(cuotaGuardada.getPeriodo()).isEqualTo("2026-09");
+        assertThat(cuotaGuardada.getImporte()).isEqualByComparingTo("15000.00");
+        assertThat(cuotaGuardada.getSocioNumeroSocio()).isEqualTo("SOC-000001");
+    }
+
+    @Test
+    void registrarPago_conPeriodoSinCuotaGenerada_ySocioSinReglaDeSuCategoria_lanzaExcepcion() {
+        Socio socio = socioActivo("socio-1", "SOC-000001", CategoriaSocio.ADHERENTE);
+        when(socioRepository.findById("socio-1")).thenReturn(Optional.of(socio));
+        when(cuotaRepository.findBySocioIdAndPeriodo("socio-1", "2026-09")).thenReturn(Optional.empty());
+        when(reglaCuotaRepository.findByCategoriaAplicable(CategoriaSocio.ADHERENTE)).thenReturn(Optional.empty());
+
+        RegistrarPagoCuotaRequest request = new RegistrarPagoCuotaRequest(
+                "socio-1", List.of("2026-09"), LocalDate.of(2026, 7, 5),
+                MedioPago.TRANSFERENCIA, null, null);
+
+        assertThatThrownBy(() -> service.registrarPago(request, "admin-1", "Admin Uno"))
+                .isInstanceOf(ReglaCuotaNoEncontradaException.class);
+        verify(cuotaRepository, never()).save(any(Cuota.class));
+    }
+
+    @Test
+    void registrarPago_conPeriodoSinCuotaGenerada_ySocioNoActivo_siguePeriodoLanzandoExcepcion() {
+        // Mismo requisito que la generación normal (generarCuotas): un socio
+        // INACTIVO/DADO_DE_BAJA no admite pago adelantado, porque tampoco recibiría
+        // una cuota nueva de la generación mensual normal.
+        Socio socio = socioActivo("socio-1", "SOC-000001", CategoriaSocio.ACTIVO);
+        socio.setEstado(EstadoSocio.INACTIVO);
+        when(socioRepository.findById("socio-1")).thenReturn(Optional.of(socio));
+        when(cuotaRepository.findBySocioIdAndPeriodo("socio-1", "2026-09")).thenReturn(Optional.empty());
+
+        RegistrarPagoCuotaRequest request = new RegistrarPagoCuotaRequest(
+                "socio-1", List.of("2026-09"), LocalDate.of(2026, 7, 5),
                 MedioPago.TRANSFERENCIA, null, null);
 
         assertThatThrownBy(() -> service.registrarPago(request, "admin-1", "Admin Uno"))
                 .isInstanceOf(CuotaNoEncontradaException.class);
+        verify(cuotaRepository, never()).save(any(Cuota.class));
+        verify(reglaCuotaRepository, never()).findByCategoriaAplicable(any());
     }
 
     // ---------- informarPago ----------

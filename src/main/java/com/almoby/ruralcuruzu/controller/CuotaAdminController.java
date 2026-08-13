@@ -161,17 +161,21 @@ public class CuotaAdminController {
 
     @Operation(summary = "Registrar un pago manual",
             description = "Documento 10.4 (ajustado al Figma): se elige un socio y uno o varios períodos "
-                    + "(multi-select de meses, ej. pagar agosto + septiembre + octubre juntos), cada uno con una "
-                    + "cuota ya generada. Todas quedan PAGADA con los mismos datos de pago (fecha, medio, "
-                    + "comprobante, observación); el importe NO se pide en el body, se toma el de cada cuota "
-                    + "(fijado al generarla), para que el admin no pueda registrar un monto que no coincida con lo "
-                    + "adeudado. Se recalcula la deuda del socio (al consultar su estado de cuenta) y se le manda "
-                    + "un correo de confirmación.")
+                    + "(multi-select de meses, ej. pagar agosto + septiembre + octubre juntos, o un año entero). "
+                    + "Si algún período todavía no tiene una cuota generada para ese socio (pago adelantado), se "
+                    + "genera en el momento con la regla de cuota vigente para su categoría -solo si el socio está "
+                    + "ACTIVO-, en vez de exigir que antes se corra \"Generar cuotas\" para todo el club en ese "
+                    + "período. Todas quedan PAGADA con los mismos datos de pago (fecha, medio, comprobante, "
+                    + "observación); el importe NO se pide en el body, se toma el de cada cuota (fijado al "
+                    + "generarla o, si se generó acá, al momento de generarla), para que el admin no pueda "
+                    + "registrar un monto que no coincida con lo adeudado. Se recalcula la deuda del socio (al "
+                    + "consultar su estado de cuenta) y se le manda un correo de confirmación.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Pago registrado correctamente"),
             @ApiResponse(responseCode = "400", description = "Datos inválidos, o alguna cuota no admite un pago en su estado actual",
                     content = @Content(schema = @Schema(implementation = ApiErrorResponse.class))),
-            @ApiResponse(responseCode = "404", description = "No hay una cuota generada para el socio en alguno de los períodos indicados",
+            @ApiResponse(responseCode = "404", description = "No existe el socio; no hay una regla de cuota configurada para su "
+                    + "categoría; o alguno de los períodos no tiene cuota y el socio no está ACTIVO (no admite pago adelantado)",
                     content = @Content(schema = @Schema(implementation = ApiErrorResponse.class)))
     })
     @PostMapping("/pagos")
