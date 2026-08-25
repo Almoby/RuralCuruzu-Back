@@ -42,5 +42,8 @@ public enum TipoNotificacion {
     RECUPERACION_PASSWORD,
     PASSWORD_CAMBIADA,
 
-    COMERCIO_ELIMINADO
+    COMERCIO_ELIMINADO,
+
+    /** Aviso al socio cuando un admin le cambia el estado de membresía a DADO_DE_BAJA. */
+    SOCIO_DADO_DE_BAJA
 }

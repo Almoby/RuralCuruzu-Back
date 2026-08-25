@@ -20,6 +20,14 @@ public final class RutasApi {
     public static final String ADMIN_CUOTAS = ADMIN_CUOTAS_BASE + "/**";
     public static final String ADMIN_REGLAS_CUOTA_BASE = "/api/admin/reglas-cuota";
     public static final String ADMIN_REGLAS_CUOTA = ADMIN_REGLAS_CUOTA_BASE + "/**";
+    /**
+     * Ruta pública sin login: para que el formulario "Quiero ser socio" (y
+     * cualquier visitante) pueda mostrar el valor de la cuota de cada
+     * categoría (ACTIVO/ADHERENTE) antes de mandar la solicitud. Solo
+     * lectura, sin datos sensibles (mismo criterio que SOLICITUDES_SOCIO).
+     */
+    public static final String REGLAS_CUOTA_PUBLICAS_BASE = "/api/reglas-cuota";
+    public static final String REGLAS_CUOTA_PUBLICAS = REGLAS_CUOTA_PUBLICAS_BASE + "/**";
     public static final String SOCIO_CUOTAS_BASE = "/api/socio/cuotas";
     public static final String SOCIO_CUOTAS = SOCIO_CUOTAS_BASE + "/**";
     public static final String SOCIO_PERFIL_BASE = "/api/socio/perfil";

@@ -98,6 +98,16 @@ public interface EmailService {
     void enviarCorreoComercioEliminado(String destinatario, String nombreComercial, String motivo);
 
     /**
+     * Avisa a un socio que un admin le cambió el estado de membresía a
+     * DADO_DE_BAJA (pedido del dueño del proyecto). A diferencia de
+     * enviarCorreoComercioEliminado, esto NO borra nada: el socio sigue
+     * existiendo en la base, solo cambió de estado (ver
+     * SocioServiceImpl.cambiarEstadoSocio), así que no hay un "motivo"
+     * estructurado que informar acá (CambiarEstadoSocioRequest no lo pide).
+     */
+    void enviarCorreoSocioDadoDeBaja(String destinatario, String nombre);
+
+    /**
      * Recuerda al socio que una cuota esta por vencer (documento, seccion 29.2:
      * "cinco dias antes" y "un dia antes" de recordatorio, y "dia de
      * vencimiento" de aviso reutilizan este mismo correo con distinto

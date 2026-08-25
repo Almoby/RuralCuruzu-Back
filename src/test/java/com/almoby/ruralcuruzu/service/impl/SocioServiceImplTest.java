@@ -479,6 +479,28 @@ class SocioServiceImplTest {
         assertThat(response.mensaje()).isEqualTo("Socio dado de baja correctamente");
         assertThat(socio.getEstado()).isEqualTo(EstadoSocio.DADO_DE_BAJA);
         verify(socioRepository).save(socio);
+        verify(emailService).enviarCorreoSocioDadoDeBaja("socio@example.com", "García, Juan Carlos");
+    }
+
+    @Test
+    void cambiarEstadoSocio_yaEstabaDadoDeBaja_noReenviaElCorreo() {
+        Socio socio = socioActivo("socio-1", "SOC-000001", "García, Juan Carlos");
+        socio.setEstado(EstadoSocio.DADO_DE_BAJA);
+        when(socioRepository.findById("socio-1")).thenReturn(Optional.of(socio));
+
+        service.cambiarEstadoSocio("socio-1", new CambiarEstadoSocioRequest(EstadoSocio.DADO_DE_BAJA));
+
+        verify(emailService, never()).enviarCorreoSocioDadoDeBaja(anyString(), anyString());
+    }
+
+    @Test
+    void cambiarEstadoSocio_otraTransicion_noEnviaCorreoDeBaja() {
+        Socio socio = socioActivo("socio-1", "SOC-000001", "García, Juan Carlos");
+        when(socioRepository.findById("socio-1")).thenReturn(Optional.of(socio));
+
+        service.cambiarEstadoSocio("socio-1", new CambiarEstadoSocioRequest(EstadoSocio.INACTIVO));
+
+        verify(emailService, never()).enviarCorreoSocioDadoDeBaja(anyString(), anyString());
     }
 
     @Test

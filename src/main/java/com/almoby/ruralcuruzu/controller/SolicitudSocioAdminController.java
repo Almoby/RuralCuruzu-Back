@@ -7,6 +7,7 @@ import java.util.stream.Stream;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -30,6 +31,7 @@ import com.almoby.ruralcuruzu.exception.ApiErrorResponse;
 import com.almoby.ruralcuruzu.exception.ArchivoInvalidoException;
 import com.almoby.ruralcuruzu.security.AuthenticatedUser;
 import com.almoby.ruralcuruzu.service.AlmacenamientoArchivosService;
+import com.almoby.ruralcuruzu.service.SolicitudSocioPdfService;
 import com.almoby.ruralcuruzu.service.SolicitudSocioService;
 import com.almoby.ruralcuruzu.util.ArchivoDescargaUtil;
 
@@ -57,11 +59,14 @@ public class SolicitudSocioAdminController {
 
     private final SolicitudSocioService solicitudSocioService;
     private final AlmacenamientoArchivosService almacenamientoArchivosService;
+    private final SolicitudSocioPdfService solicitudSocioPdfService;
 
     public SolicitudSocioAdminController(SolicitudSocioService solicitudSocioService,
-                                          AlmacenamientoArchivosService almacenamientoArchivosService) {
+                                          AlmacenamientoArchivosService almacenamientoArchivosService,
+                                          SolicitudSocioPdfService solicitudSocioPdfService) {
         this.solicitudSocioService = solicitudSocioService;
         this.almacenamientoArchivosService = almacenamientoArchivosService;
+        this.solicitudSocioPdfService = solicitudSocioPdfService;
     }
 
     @Operation(summary = "Listar solicitudes de socio",
@@ -90,6 +95,29 @@ public class SolicitudSocioAdminController {
     public ResponseEntity<SolicitudSocioResponse> obtenerSolicitud(@PathVariable String numeroSolicitud) {
         log.info("GET /api/admin/solicitudes-socio/{} ", numeroSolicitud);
         return ResponseEntity.ok(solicitudSocioService.obtenerSolicitudSocioPorNumero(numeroSolicitud));
+    }
+
+    @Operation(summary = "Descargar la solicitud en PDF",
+            description = "Arma un PDF con los datos completos de la solicitud (datos generales y los propios de "
+                    + "persona física o jurídica, según corresponda) para archivo físico o para adjuntar donde "
+                    + "haga falta.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "PDF generado correctamente"),
+            @ApiResponse(responseCode = "404", description = "No existe una solicitud con ese número",
+                    content = @Content(schema = @Schema(implementation = ApiErrorResponse.class)))
+    })
+    @GetMapping("/{numeroSolicitud}/pdf")
+    public ResponseEntity<byte[]> descargarPdf(@PathVariable String numeroSolicitud) {
+        log.info("GET /api/admin/solicitudes-socio/{}/pdf", numeroSolicitud);
+
+        SolicitudSocioResponse solicitud = solicitudSocioService.obtenerSolicitudSocioPorNumero(numeroSolicitud);
+        byte[] pdf = solicitudSocioPdfService.generarPdf(solicitud);
+
+        String nombreArchivo = "solicitud-" + numeroSolicitud + ".pdf";
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + nombreArchivo + "\"")
+                .contentType(MediaType.APPLICATION_PDF)
+                .body(pdf);
     }
 
     @Operation(summary = "Cambiar el estado de una solicitud",

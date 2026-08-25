@@ -194,6 +194,19 @@ public class ConsoleEmailService implements EmailSender {
     }
 
     @Override
+    public void enviarCorreoSocioDadoDeBaja(String destinatario, String nombre) {
+        log.info("""
+                ==================== EMAIL (simulado) ====================
+                Para: {}
+                Asunto: Tu membresía fue dada de baja - Rural Curuzú
+                Hola {},
+                Te informamos que tu membresía en Rural Curuzú fue dada de baja.
+                Si creés que fue un error, podés contactarnos.
+                ============================================================""",
+                destinatario, nombre);
+    }
+
+    @Override
     public void enviarCorreoCuotaProximaAVencer(String destinatario, String nombre, String periodo,
                                                  BigDecimal importe, LocalDate fechaVencimiento, int diasRestantes) {
         log.info("""

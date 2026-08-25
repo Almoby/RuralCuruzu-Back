@@ -524,6 +524,45 @@ public class SmtpEmailService implements EmailSender {
                 """.formatted(nombreComercial, motivo);
     }
 
+    @Override
+    public void enviarCorreoSocioDadoDeBaja(String destinatario, String nombre) {
+        try {
+            MimeMessage mensaje = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(mensaje, true, "UTF-8");
+
+            helper.setFrom(remitente);
+            helper.setTo(destinatario);
+            helper.setSubject("Tu membresía fue dada de baja - Rural Curuzú");
+            helper.setText(cuerpoTextoPlanoSocioDadoDeBaja(nombre), cuerpoHtmlSocioDadoDeBaja(nombre));
+
+            mailSender.send(mensaje);
+            log.info("Correo de baja de socio enviado a email={}", destinatario);
+        } catch (MessagingException | MailException ex) {
+            // El socio YA quedó DADO_DE_BAJA con éxito: que falle este aviso no debe
+            // romper la respuesta de la operación (mismo criterio que
+            // enviarCorreoComercioEliminado).
+            log.error("Error enviando correo de baja de socio a email={}", destinatario, ex);
+        }
+    }
+
+    private String cuerpoTextoPlanoSocioDadoDeBaja(String nombre) {
+        return """
+                Hola %s,
+
+                Te informamos que tu membresía en Rural Curuzú fue dada de baja.
+
+                Si creés que fue un error, podés contactarnos.
+                """.formatted(nombre);
+    }
+
+    private String cuerpoHtmlSocioDadoDeBaja(String nombre) {
+        return """
+                <p>Hola %s,</p>
+                <p>Te informamos que tu membresía en <strong>Rural Curuzú</strong> fue dada de baja.</p>
+                <p>Si creés que fue un error, podés contactarnos.</p>
+                """.formatted(nombre);
+    }
+
     private String cuerpoTextoPlanoRechazo(String nombre, String numeroSolicitud, String motivo) {
         return """
                 Hola %s,

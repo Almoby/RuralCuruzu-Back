@@ -146,6 +146,14 @@ public class NotificacionEmailServiceImpl implements EmailService {
     }
 
     @Override
+    public void enviarCorreoSocioDadoDeBaja(String destinatario, String nombre) {
+        enviarConRegistro(destinatario, nombre, TipoNotificacion.SOCIO_DADO_DE_BAJA,
+                "Tu membresía fue dada de baja - Rural Curuzú",
+                "Tu membresía en Rural Curuzú fue dada de baja.",
+                false, () -> emailSender.enviarCorreoSocioDadoDeBaja(destinatario, nombre));
+    }
+
+    @Override
     public void enviarCorreoCuotaProximaAVencer(String destinatario, String nombre, String periodo,
                                                  BigDecimal importe, LocalDate fechaVencimiento, int diasRestantes) {
         enviarConRegistro(destinatario, nombre, TipoNotificacion.CUOTA_PROXIMA_A_VENCER,

@@ -43,6 +43,8 @@ public interface EmailSender {
 
     void enviarCorreoComercioEliminado(String destinatario, String nombreComercial, String motivo);
 
+    void enviarCorreoSocioDadoDeBaja(String destinatario, String nombre);
+
     void enviarCorreoCuotaProximaAVencer(String destinatario, String nombre, String periodo,
                                           BigDecimal importe, LocalDate fechaVencimiento, int diasRestantes);
 

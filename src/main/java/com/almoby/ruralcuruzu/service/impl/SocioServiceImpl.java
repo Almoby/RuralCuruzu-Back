@@ -205,12 +205,25 @@ public class SocioServiceImpl implements SocioService {
     @Override
     public CambiarEstadoSocioResponse cambiarEstadoSocio(String id, CambiarEstadoSocioRequest request) {
         Socio socio = buscarOFallar(id);
+        boolean pasaADadoDeBaja = request.nuevoEstado() == EstadoSocio.DADO_DE_BAJA && socio.getEstado() != EstadoSocio.DADO_DE_BAJA;
 
         socio.setEstado(request.nuevoEstado());
         socio.setFechaActualizacion(Instant.now());
         socioRepository.save(socio);
 
         log.info("Socio id={} pasó a estado={}", id, request.nuevoEstado());
+
+        // Pedido del dueño del proyecto: avisarle al socio cuando se lo da de baja.
+        // Solo cuando el cambio efectivamente LO da de baja (si ya estaba
+        // DADO_DE_BAJA y el admin "reconfirma" el mismo estado, no hay nada nuevo
+        // que avisar). El socio NO se borra ni deja de figurar en el listado: sigue
+        // en la base con este estado, sin login habilitado (ver documento 8.4).
+        if (pasaADadoDeBaja) {
+            String email = socio.obtenerEmail();
+            if (email != null) {
+                emailService.enviarCorreoSocioDadoDeBaja(email, socio.nombreParaMostrar());
+            }
+        }
 
         return CambiarEstadoSocioResponse.of(id, request.nuevoEstado());
     }

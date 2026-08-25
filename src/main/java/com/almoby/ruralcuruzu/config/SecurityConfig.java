@@ -36,6 +36,9 @@ public class SecurityConfig {
             RutasApi.REFRESH,
             // Botón "Quiero ser socio": cualquier visitante puede enviar una solicitud.
             RutasApi.SOLICITUDES_SOCIO,
+            // Valor de la cuota por categoría: el mismo formulario "Quiero ser socio"
+            // lo muestra antes de mandar la solicitud, sin requerir login.
+            RutasApi.REGLAS_CUOTA_PUBLICAS,
             // Responder una observación desde el link del correo: el solicitante
             // todavía no tiene cuenta, así que se protege con el token (de un solo
             // uso y con vencimiento) en vez de con sesión.
