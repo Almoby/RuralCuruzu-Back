@@ -211,14 +211,14 @@ class SocioServiceImplTest {
         return new AltaManualSocioRequest(
                 CategoriaSocio.ACTIVO, TipoPersona.FISICA, "García, Juan Carlos", "28345678", "20-28345678-2",
                 LocalDate.of(1985, 4, 12), "Calle 123", "Depto B", "+54 9 3777123456", email, "Farmacia Central",
-                "Ruta 123 km 4", null, null, estado);
+                "Ruta 123 km 4", null, null, estado, null);
     }
 
     private AltaManualSocioRequest altaManualJuridica(String email) {
         return new AltaManualSocioRequest(
                 CategoriaSocio.ADHERENTE, TipoPersona.JURIDICA, "Comercial del Sur S.A.", null, "30-71234567-9",
                 null, "Calle 123", null, "+54 9 3777123456", email, "Depósito", "Ruta 123 km 4",
-                "María Fernández", "30123456", null);
+                "María Fernández", "30123456", null, null);
     }
 
     @Test
@@ -517,7 +517,7 @@ class SocioServiceImplTest {
         when(socioRepository.findById("socio-1")).thenReturn(Optional.of(socio));
 
         ActualizarSocioParcialRequest request = new ActualizarSocioParcialRequest(
-                null, "+54 9 3777999888", null, null, null, null, null);
+                null, "+54 9 3777999888", null, null, null, null, null, null);
 
         SocioActualizadoResponse response = service.actualizarSocioParcial("socio-1", request);
 
@@ -536,7 +536,7 @@ class SocioServiceImplTest {
         when(socioRepository.findById("socio-1")).thenReturn(Optional.of(socio));
 
         ActualizarSocioParcialRequest request = new ActualizarSocioParcialRequest(
-                CategoriaSocio.ACTIVO, "+54 9 3777111222", null, "Nueva dirección 456", null, null, null);
+                CategoriaSocio.ACTIVO, "+54 9 3777111222", null, "Nueva dirección 456", null, null, null, null);
 
         service.actualizarSocioParcial("socio-1", request);
 
@@ -556,7 +556,7 @@ class SocioServiceImplTest {
         when(usuarioRepository.findById("usuario-1")).thenReturn(Optional.of(usuario));
 
         ActualizarSocioParcialRequest request = new ActualizarSocioParcialRequest(
-                null, null, "nuevo@example.com", null, null, null, null);
+                null, null, "nuevo@example.com", null, null, null, null, null);
 
         service.actualizarSocioParcial("socio-1", request);
 
@@ -572,7 +572,7 @@ class SocioServiceImplTest {
         when(usuarioRepository.existsByEmail("ya.registrado@example.com")).thenReturn(true);
 
         ActualizarSocioParcialRequest request = new ActualizarSocioParcialRequest(
-                null, null, "ya.registrado@example.com", null, null, null, null);
+                null, null, "ya.registrado@example.com", null, null, null, null, null);
 
         assertThatThrownBy(() -> service.actualizarSocioParcial("socio-1", request))
                 .isInstanceOf(EmailYaRegistradoException.class);
@@ -587,7 +587,7 @@ class SocioServiceImplTest {
         when(socioRepository.findById("socio-1")).thenReturn(Optional.of(socio));
 
         ActualizarSocioParcialRequest request = new ActualizarSocioParcialRequest(
-                null, null, "socio@example.com", null, null, null, null);
+                null, null, "socio@example.com", null, null, null, null, null);
 
         service.actualizarSocioParcial("socio-1", request);
 
@@ -601,7 +601,7 @@ class SocioServiceImplTest {
         when(socioRepository.findById("socio-1")).thenReturn(Optional.of(socio));
 
         ActualizarSocioParcialRequest request = new ActualizarSocioParcialRequest(
-                CategoriaSocio.ADHERENTE, null, null, null, null, null, null);
+                CategoriaSocio.ADHERENTE, null, null, null, null, null, null, null);
 
         service.actualizarSocioParcial("socio-1", request);
 
@@ -618,7 +618,7 @@ class SocioServiceImplTest {
         when(socioRepository.findById("socio-2")).thenReturn(Optional.of(juridico));
 
         ActualizarSocioParcialRequest requestVacio = new ActualizarSocioParcialRequest(
-                null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null);
 
         SocioActualizadoResponse respuestaFisica = service.actualizarSocioParcial("socio-1", requestVacio);
         SocioActualizadoResponse respuestaJuridica = service.actualizarSocioParcial("socio-2", requestVacio);
@@ -635,7 +635,7 @@ class SocioServiceImplTest {
         when(socioRepository.findById("no-existe")).thenReturn(Optional.empty());
 
         ActualizarSocioParcialRequest request = new ActualizarSocioParcialRequest(
-                null, "+54 9 3777999888", null, null, null, null, null);
+                null, "+54 9 3777999888", null, null, null, null, null, null);
 
         assertThatThrownBy(() -> service.actualizarSocioParcial("no-existe", request))
                 .isInstanceOf(SocioNoEncontradoException.class);

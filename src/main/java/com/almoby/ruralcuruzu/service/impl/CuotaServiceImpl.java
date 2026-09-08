@@ -29,6 +29,7 @@ import com.almoby.ruralcuruzu.domain.Pago;
 import com.almoby.ruralcuruzu.domain.ReglaCuota;
 import com.almoby.ruralcuruzu.domain.Socio;
 import com.almoby.ruralcuruzu.dto.request.AnularCuotaRequest;
+import com.almoby.ruralcuruzu.dto.request.EditarPagoCuotaRequest;
 import com.almoby.ruralcuruzu.dto.request.InformarPagoCuotaRequest;
 import com.almoby.ruralcuruzu.dto.request.RegistrarPagoCuotaRequest;
 import com.almoby.ruralcuruzu.dto.request.RevisarPagoInformadoRequest;
@@ -49,6 +50,7 @@ import com.almoby.ruralcuruzu.enums.EstadoPago;
 import com.almoby.ruralcuruzu.enums.EstadoSocio;
 import com.almoby.ruralcuruzu.enums.MedioPago;
 import com.almoby.ruralcuruzu.enums.OrigenEjecucionCuotas;
+import com.almoby.ruralcuruzu.enums.PeriodicidadPago;
 import com.almoby.ruralcuruzu.enums.Rol;
 import com.almoby.ruralcuruzu.exception.ArchivoInvalidoException;
 import com.almoby.ruralcuruzu.exception.CuotaEstadoInvalidoException;
@@ -198,7 +200,11 @@ public class CuotaServiceImpl implements CuotaService {
 
         for (Cuota cuota : cuotas) {
             Socio socio = sociosPorId.get(cuota.getSocioId());
-            if (socio != null && socio.obtenerEmail() != null) {
+            // No tiene sentido recordarle una deuda a alguien que ya no es socio activo
+            // (INACTIVO/DADO_DE_BAJA): la cuota vieja sigue existiendo en la base (no se
+            // borra nada al dar de baja, ver SocioServiceImpl.cambiarEstadoSocio), pero no
+            // hay que seguir persiguiéndolo por mail.
+            if (socio != null && socio.getEstado() == EstadoSocio.ACTIVO && socio.obtenerEmail() != null) {
                 emailService.enviarCorreoCuotaProximaAVencer(socio.obtenerEmail(), socio.nombreParaMostrar(),
                         cuota.getPeriodo(), cuota.getImporte(), cuota.getFechaVencimiento(), diasRestantes);
             }
@@ -217,7 +223,9 @@ public class CuotaServiceImpl implements CuotaService {
         for (Cuota cuota : vencidas) {
             if (avisaHoy(cuota, hoy)) {
                 Socio socio = sociosPorId.get(cuota.getSocioId());
-                if (socio != null && socio.obtenerEmail() != null) {
+                // Mismo criterio que enviarRecordatorioPorDiasRestantes: un socio que ya no
+                // está ACTIVO no debe seguir recibiendo avisos de deuda.
+                if (socio != null && socio.getEstado() == EstadoSocio.ACTIVO && socio.obtenerEmail() != null) {
                     emailService.enviarCorreoCuotaVencida(socio.obtenerEmail(), socio.nombreParaMostrar(),
                             cuota.getPeriodo(), cuota.getImporte(), cuota.getFechaVencimiento());
                 }
@@ -269,9 +277,18 @@ public class CuotaServiceImpl implements CuotaService {
 
         int generadas = 0;
         int omitidos = 0;
+        int noLesCorrespondia = 0;
 
         for (Socio socio : sociosActivos) {
             if (sociosConCuota.contains(socio.getId())) {
+                continue;
+            }
+
+            // Punto 4 (pedido del dueño del proyecto): no todos los socios pagan mes a
+            // mes; a los que tienen periodicidad TRIMESTRAL/SEMESTRAL/ANUAL solo les
+            // corresponde generación en los meses de PeriodicidadPago.mesesDeGeneracion().
+            if (!socio.periodicidadEfectiva().mesesDeGeneracion().contains(periodo.getMonthValue())) {
+                noLesCorrespondia++;
                 continue;
             }
 
@@ -307,13 +324,14 @@ public class CuotaServiceImpl implements CuotaService {
                 .cantidadSociosActivos(sociosActivos.size())
                 .cantidadCuotasGeneradas(generadas)
                 .cantidadSociosOmitidos(omitidos)
+                .cantidadSociosNoLesCorrespondia(noLesCorrespondia)
                 .adminId(adminId)
                 .adminNombre(adminNombre)
                 .build();
         ejecucionRepository.save(ejecucion);
 
-        log.info("Generación de cuotas ejecutada periodo={} generadas={} omitidos={} origen={}",
-                periodoStr, generadas, omitidos, ejecucion.getOrigen());
+        log.info("Generación de cuotas ejecutada periodo={} generadas={} omitidos={} noLesCorrespondia={} origen={}",
+                periodoStr, generadas, omitidos, noLesCorrespondia, ejecucion.getOrigen());
 
         return GeneracionCuotasResponse.from(ejecucion);
     }
@@ -321,6 +339,10 @@ public class CuotaServiceImpl implements CuotaService {
     private Cuota crearCuotaPendiente(Socio socio, ReglaCuota regla, YearMonth periodo, String periodoStr) {
         int diaVencimiento = Math.min(regla.getDiaVencimiento(), periodo.lengthOfMonth());
         Instant ahora = Instant.now();
+        // Punto 4: una cuota TRIMESTRAL/SEMESTRAL/ANUAL cubre varios meses de una
+        // sola vez, así que su importe es el mensual de la categoría multiplicado
+        // por esa cantidad de meses (una cuota mensual no cambia: x1).
+        BigDecimal importe = aplicarMultiplicadorDePeriodicidad(regla.getImporte(), socio.periodicidadEfectiva());
 
         return Cuota.builder()
                 .socioId(socio.getId())
@@ -329,12 +351,17 @@ public class CuotaServiceImpl implements CuotaService {
                 .tipoCuotaNombre(regla.getNombre())
                 .categoria(socio.getCategoria())
                 .periodo(periodoStr)
-                .importe(regla.getImporte())
+                .importe(importe)
                 .fechaVencimiento(periodo.atDay(diaVencimiento))
                 .estado(EstadoCuota.PENDIENTE)
                 .fechaGeneracion(ahora)
                 .fechaActualizacion(ahora)
                 .build();
+    }
+
+    private BigDecimal aplicarMultiplicadorDePeriodicidad(BigDecimal importeMensual, PeriodicidadPago periodicidad) {
+        int meses = periodicidad.cantidadDeMeses();
+        return meses == 1 ? importeMensual : importeMensual.multiply(BigDecimal.valueOf(meses));
     }
 
     @Override
@@ -365,6 +392,28 @@ public class CuotaServiceImpl implements CuotaService {
         return filtradas.stream()
                 .map(c -> CuotaResumenResponse.from(c, pagoVigentePorCuota.get(c.getId())))
                 .toList();
+    }
+
+    @Override
+    public List<CuotaResumenResponse> listarPagosAdelantados() {
+        List<Cuota> adelantadas = cuotaRepository.findAll().stream()
+                .filter(this::esPagoAdelantado)
+                .toList();
+
+        Map<String, Pago> pagoVigentePorCuota = pagosVigentesPorCuotaId(idsDe(adelantadas));
+        return adelantadas.stream()
+                .map(c -> CuotaResumenResponse.from(c, pagoVigentePorCuota.get(c.getId())))
+                .toList();
+    }
+
+    /** Se generó antes del mes que cubre: no llegó por la corrida mensual normal del día 1º. */
+    private boolean esPagoAdelantado(Cuota cuota) {
+        if (cuota.getFechaGeneracion() == null) {
+            return false;
+        }
+        YearMonth mesDeGeneracion = YearMonth.from(cuota.getFechaGeneracion().atZone(ZoneOffset.UTC));
+        YearMonth mesDelPeriodo = YearMonth.parse(cuota.getPeriodo());
+        return mesDeGeneracion.isBefore(mesDelPeriodo);
     }
 
     @Override
@@ -513,6 +562,87 @@ public class CuotaServiceImpl implements CuotaService {
         }
 
         return RegistrarPagoResponse.of(respuestas);
+    }
+
+    /**
+     * Punto 3 (pedido del dueño del proyecto): antes no había forma de
+     * corregir un pago cargado mal (ej. a nombre de otro socio). Solo se
+     * pueden editar pagos registrados manualmente por un admin (no los
+     * informados por el socio, que tienen su propio flujo de revisión), y que
+     * estén APROBADO (no tiene sentido "corregir" uno rechazado).
+     */
+    @Override
+    public CuotaResponse editarPago(String pagoId, EditarPagoCuotaRequest request, String adminId, String adminNombre) {
+        Pago pago = pagoRepository.findById(pagoId).orElseThrow(() -> new PagoNoEncontradoException(pagoId));
+
+        if (pago.isInformadoPorSocio()) {
+            throw new CuotaEstadoInvalidoException(
+                    "Un pago informado por el socio no se edita acá: hay que aprobarlo o rechazarlo");
+        }
+        if (pago.getEstado() != EstadoPago.APROBADO) {
+            throw new CuotaEstadoInvalidoException("Solo se puede editar un pago en estado APROBADO");
+        }
+
+        Cuota cuota = buscarOFallar(pago.getCuotaId());
+        Instant ahora = Instant.now();
+        boolean cambioDeSocio = request.socioId() != null && !request.socioId().equals(pago.getSocioId());
+
+        if (cambioDeSocio) {
+            Socio socioCorrecto = socioRepository.findById(request.socioId())
+                    .orElseThrow(() -> new SocioNoEncontradoException(request.socioId()));
+
+            // Resolver y validar la cuota CORRECTA primero, antes de tocar nada de la
+            // vieja: si esto falla (ej. el socio correcto ya tiene esa cuota PAGADA,
+            // o no admite pago adelantado), no queremos dejar la cuota vieja ya
+            // revertida a PENDIENTE/VENCIDA con el Pago aprobado todavía apuntándole
+            // (un estado a medio camino que ninguna de las dos cuotas refleja bien).
+            Cuota cuotaCorrecta = buscarOGenerarCuotaDeSocioEnPeriodo(socioCorrecto, cuota.getPeriodo());
+            validarPuedeRegistrarPago(cuotaCorrecta);
+
+            // Recién ahora, con la cuota correcta ya confirmada, se revierte la vieja:
+            // no era realmente de este pago, vuelve a quedar pendiente de que su
+            // verdadero dueño la pague (o vencida, si ya se pasó la fecha).
+            cuota.setEstado(cuota.getFechaVencimiento().isBefore(LocalDate.now())
+                    ? EstadoCuota.VENCIDA : EstadoCuota.PENDIENTE);
+            cuota.setFechaActualizacion(ahora);
+            cuotaRepository.save(cuota);
+
+            pago.setCuotaId(cuotaCorrecta.getId());
+            pago.setSocioId(socioCorrecto.getId());
+            pago.setSocioNumeroSocio(socioCorrecto.getNumeroSocio());
+            pago.setSocioNombre(socioCorrecto.nombreParaMostrar());
+            // Mismo criterio que registrarPago: el importe es el de la cuota, nunca uno arbitrario.
+            pago.setImporte(cuotaCorrecta.getImporte());
+
+            cuotaCorrecta.setEstado(EstadoCuota.PAGADA);
+            cuotaCorrecta.setFechaActualizacion(ahora);
+            cuotaRepository.save(cuotaCorrecta);
+
+            cuota = cuotaCorrecta;
+        }
+
+        if (request.fecha() != null) {
+            pago.setFechaPago(request.fecha().atStartOfDay(ZoneOffset.UTC).toInstant());
+        }
+        if (request.medioPago() != null) {
+            pago.setMedioPago(request.medioPago());
+        }
+        if (request.observacion() != null) {
+            pago.setObservacion(request.observacion());
+        }
+        pago.setFechaActualizacion(ahora);
+        pagoRepository.save(pago);
+
+        log.info("Pago id={} editado por admin={} (cambioDeSocio={})", pago.getId(), adminNombre, cambioDeSocio);
+
+        if (cambioDeSocio) {
+            // El socio correcto recién ahora tiene registrado el pago: se le avisa
+            // igual que en un registro nuevo (notificarPagoRegistrado ya chequea si
+            // le queda otra deuda pendiente para mandarle también "cuenta al día").
+            notificarPagoRegistrado(cuota, pago);
+        }
+
+        return CuotaResponse.from(cuota, pago);
     }
 
     @Override

@@ -3,6 +3,7 @@ package com.almoby.ruralcuruzu.dto.response;
 import com.almoby.ruralcuruzu.domain.Socio;
 import com.almoby.ruralcuruzu.enums.CategoriaSocio;
 import com.almoby.ruralcuruzu.enums.EstadoSocio;
+import com.almoby.ruralcuruzu.enums.PeriodicidadPago;
 import com.almoby.ruralcuruzu.enums.TipoPersona;
 
 /**
@@ -17,6 +18,7 @@ public record SocioResumenResponse(
         CategoriaSocio categoria,
         TipoPersona tipoPersona,
         EstadoSocio estado,
+        PeriodicidadPago periodicidadPago,
         String correoElectronico
 
 ) {
@@ -29,6 +31,7 @@ public record SocioResumenResponse(
                 socio.getCategoria(),
                 socio.getTipoPersona(),
                 socio.getEstado(),
+                socio.periodicidadEfectiva(),
                 socio.obtenerEmail());
     }
 }

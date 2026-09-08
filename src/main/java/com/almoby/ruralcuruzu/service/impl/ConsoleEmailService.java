@@ -215,6 +215,8 @@ public class ConsoleEmailService implements EmailSender {
                 Asunto: Tu cuota vence en {} día(s) - Rural Curuzú
                 Hola {},
                 Tu cuota del período {} por ${} vence el {} (faltan {} día(s)).
+                Si ya pagaste esta cuota, podés ignorar este mensaje: puede haber unas horas
+                de demora entre el pago y la actualización del sistema.
                 ============================================================""",
                 destinatario, diasRestantes, nombre, periodo, importe, fechaVencimiento, diasRestantes);
     }
@@ -228,6 +230,8 @@ public class ConsoleEmailService implements EmailSender {
                 Asunto: Tenés una cuota vencida - Rural Curuzú
                 Hola {},
                 Tu cuota del período {} por ${} venció el {} y sigue impaga.
+                Si ya pagaste esta cuota, podés ignorar este mensaje: puede haber unas horas
+                de demora entre el pago y la actualización del sistema.
                 ============================================================""",
                 destinatario, nombre, periodo, importe, fechaVencimiento);
     }

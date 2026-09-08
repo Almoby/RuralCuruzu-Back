@@ -36,6 +36,8 @@ public class DatosSolicitudValidosValidator
                     "El nombre del responsable es obligatorio para persona jurídica");
             valido &= requerido(context, request.dniResponsable(), "dniResponsable",
                     "El DNI del responsable es obligatorio para persona jurídica");
+            valido &= requerido(context, request.cuit(), "cuit",
+                    "El CUIT es obligatorio para persona jurídica");
             valido &= noCorresponde(context, request.documento(), "documento",
                     "No corresponde enviar documento cuando tipoPersona es JURIDICA");
             valido &= noCorresponde(context, request.fechaNacimiento() != null, "fechaNacimiento",

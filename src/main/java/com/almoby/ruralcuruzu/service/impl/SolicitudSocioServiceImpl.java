@@ -327,14 +327,17 @@ public class SolicitudSocioServiceImpl implements SolicitudSocioService {
     private List<String> extraerDocumentos(SolicitudSocioRequest request) {
         if (request.tipoPersona() == TipoPersona.FISICA) {
             String dni = normalizarDocumento(request.documento());
+            // Punto 6 (pedido del dueño del proyecto): cuit ahora es opcional para
+            // FISICA, así que puede venir null acá. Si vino, se sigue chequeando
+            // como documento duplicado; si no, solo se valida el DNI.
             String cuil = normalizarDocumento(request.cuit());
-            return List.of(dni, cuil);
+            return cuil != null ? List.of(dni, cuil) : List.of(dni);
         }
         return List.of(normalizarDocumento(request.cuit()));
     }
 
     private String normalizarDocumento(String valor) {
-        return valor.replaceAll("[-.\\s]", "");
+        return valor != null ? valor.replaceAll("[-.\\s]", "") : null;
     }
 
     private DatosPersonaFisica mapearFisica(SolicitudSocioRequest r) {

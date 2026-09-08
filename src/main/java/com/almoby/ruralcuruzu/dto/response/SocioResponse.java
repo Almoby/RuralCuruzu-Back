@@ -7,6 +7,7 @@ import com.almoby.ruralcuruzu.domain.DatosPersonaJuridica;
 import com.almoby.ruralcuruzu.domain.Socio;
 import com.almoby.ruralcuruzu.enums.CategoriaSocio;
 import com.almoby.ruralcuruzu.enums.EstadoSocio;
+import com.almoby.ruralcuruzu.enums.PeriodicidadPago;
 import com.almoby.ruralcuruzu.enums.TipoPersona;
 
 /**
@@ -30,6 +31,7 @@ public record SocioResponse(
         DatosPersonaFisica datosPersonaFisica,
         DatosPersonaJuridica datosPersonaJuridica,
         EstadoSocio estado,
+        PeriodicidadPago periodicidadPago,
         String numeroSolicitudOrigen,
         Instant fechaAlta,
         Instant fechaActualizacion,
@@ -51,6 +53,7 @@ public record SocioResponse(
                 socio.getDatosPersonaFisica(),
                 socio.getDatosPersonaJuridica(),
                 socio.getEstado(),
+                socio.periodicidadEfectiva(),
                 socio.getNumeroSolicitudOrigen(),
                 socio.getFechaAlta(),
                 socio.getFechaActualizacion(),

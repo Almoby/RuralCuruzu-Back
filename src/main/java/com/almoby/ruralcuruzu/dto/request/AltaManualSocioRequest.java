@@ -4,6 +4,7 @@ import java.time.LocalDate;
 
 import com.almoby.ruralcuruzu.enums.CategoriaSocio;
 import com.almoby.ruralcuruzu.enums.EstadoSocio;
+import com.almoby.ruralcuruzu.enums.PeriodicidadPago;
 import com.almoby.ruralcuruzu.enums.TipoPersona;
 import com.almoby.ruralcuruzu.validation.CuitCuil;
 import com.almoby.ruralcuruzu.validation.DatosPersonaRequestValidable;
@@ -51,8 +52,10 @@ public record AltaManualSocioRequest(
         @Dni
         String documento,
 
-        @Schema(description = "CUIT/CUIL, para ambos tipos de persona", example = "20-28345678-9")
-        @NotBlank(message = "El CUIT/CUIL es obligatorio")
+        @Schema(description = "CUIT/CUIL. Opcional si tipoPersona es FISICA (pedido del dueño del proyecto: hay "
+                + "socios que solo tienen DNI, no CUIT/CUIL); obligatorio si es JURIDICA, porque ahí no hay un "
+                + "documento alternativo que identifique a la empresa (ver DatosSolicitudValidosValidator)",
+                example = "20-28345678-9")
         @CuitCuil
         String cuit,
 
@@ -94,7 +97,11 @@ public record AltaManualSocioRequest(
         String dniResponsable,
 
         @Schema(description = "Estado inicial de la membresía. Si no se envía, se da de alta como ACTIVO")
-        EstadoSocio estado
+        EstadoSocio estado,
+
+        @Schema(description = "Con qué frecuencia paga la cuota (no todos pagan mes a mes). "
+                + "Si no se envía, queda en MENSUAL")
+        PeriodicidadPago periodicidadPago
 
 ) implements DatosPersonaRequestValidable {
 }

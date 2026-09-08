@@ -1,6 +1,7 @@
 package com.almoby.ruralcuruzu.dto.request;
 
 import com.almoby.ruralcuruzu.enums.CategoriaSocio;
+import com.almoby.ruralcuruzu.enums.PeriodicidadPago;
 import com.almoby.ruralcuruzu.validation.Telefono;
 
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -42,7 +43,10 @@ public record ActualizarSocioParcialRequest(
         String nombreEstablecimiento,
 
         @Schema(description = "Dirección del establecimiento, si es distinta de la dirección personal")
-        String direccionEstablecimiento
+        String direccionEstablecimiento,
+
+        @Schema(description = "Con qué frecuencia paga la cuota (MENSUAL/TRIMESTRAL/SEMESTRAL/ANUAL)")
+        PeriodicidadPago periodicidadPago
 
 ) {
 }

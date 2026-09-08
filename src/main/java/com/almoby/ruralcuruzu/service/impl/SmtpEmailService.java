@@ -618,6 +618,9 @@ public class SmtpEmailService implements EmailSender {
                 Hola %s,
 
                 Tu cuota del período %s por $%s %s (vencimiento: %s).
+
+                Si ya pagaste esta cuota, podés ignorar este mensaje: puede haber unas horas
+                de demora entre el pago y la actualización del sistema.
                 """.formatted(nombre, periodo, importe, fraseVencimiento(diasRestantes), vencimiento);
     }
 
@@ -626,6 +629,8 @@ public class SmtpEmailService implements EmailSender {
         return """
                 <p>Hola %s,</p>
                 <p>Tu cuota del período <strong>%s</strong> por <strong>$%s</strong> %s (vencimiento: <strong>%s</strong>).</p>
+                <p><em>Si ya pagaste esta cuota, podés ignorar este mensaje: puede haber unas horas de
+                demora entre el pago y la actualización del sistema.</em></p>
                 """.formatted(nombre, periodo, importe, fraseVencimiento(diasRestantes), vencimiento);
     }
 
@@ -662,6 +667,9 @@ public class SmtpEmailService implements EmailSender {
 
                 Tu cuota del período %s por $%s venció el %s y todavía figura impaga.
                 Regularizala para evitar quedar en mora.
+
+                Si ya pagaste esta cuota, podés ignorar este mensaje: puede haber unas horas
+                de demora entre el pago y la actualización del sistema.
                 """.formatted(nombre, periodo, importe, vencimiento);
     }
 
@@ -670,6 +678,8 @@ public class SmtpEmailService implements EmailSender {
                 <p>Hola %s,</p>
                 <p>Tu cuota del período <strong>%s</strong> por <strong>$%s</strong> venció el <strong>%s</strong> y todavía figura impaga.</p>
                 <p>Regularizala para evitar quedar en mora.</p>
+                <p><em>Si ya pagaste esta cuota, podés ignorar este mensaje: puede haber unas horas de
+                demora entre el pago y la actualización del sistema.</em></p>
                 """.formatted(nombre, periodo, importe, vencimiento);
     }
 

@@ -23,6 +23,7 @@ import com.almoby.ruralcuruzu.dto.response.SocioResponse;
 import com.almoby.ruralcuruzu.dto.response.SocioResumenResponse;
 import com.almoby.ruralcuruzu.enums.CategoriaSocio;
 import com.almoby.ruralcuruzu.enums.EstadoSocio;
+import com.almoby.ruralcuruzu.enums.PeriodicidadPago;
 import com.almoby.ruralcuruzu.enums.Rol;
 import com.almoby.ruralcuruzu.enums.TipoPersona;
 import com.almoby.ruralcuruzu.exception.EmailYaRegistradoException;
@@ -148,6 +149,7 @@ public class SocioServiceImpl implements SocioService {
                 .datosPersonaFisica(request.tipoPersona() == TipoPersona.FISICA ? mapearFisica(request, email) : null)
                 .datosPersonaJuridica(request.tipoPersona() == TipoPersona.JURIDICA ? mapearJuridica(request, email) : null)
                 .estado(request.estado() != null ? request.estado() : EstadoSocio.ACTIVO)
+                .periodicidadPago(request.periodicidadPago() != null ? request.periodicidadPago() : PeriodicidadPago.MENSUAL)
                 .adminResponsableAltaId(adminId)
                 .adminResponsableAltaNombre(adminNombre)
                 .fechaAlta(ahora)
@@ -234,6 +236,9 @@ public class SocioServiceImpl implements SocioService {
 
         if (request.categoria() != null) {
             socio.setCategoria(request.categoria());
+        }
+        if (request.periodicidadPago() != null) {
+            socio.setPeriodicidadPago(request.periodicidadPago());
         }
         if (esNoVacio(request.telefono())) {
             setTelefono(socio, request.telefono());

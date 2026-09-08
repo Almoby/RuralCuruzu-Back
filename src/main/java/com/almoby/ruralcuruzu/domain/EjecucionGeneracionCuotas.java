@@ -49,6 +49,16 @@ public class EjecucionGeneracionCuotas {
     @Field("cantidad_socios_omitidos")
     private int cantidadSociosOmitidos;
 
+    /**
+     * Socios ACTIVO a los que este mes no les tocaba generación (periodicidad
+     * TRIMESTRAL/SEMESTRAL/ANUAL, y el mes del período no es uno de los suyos).
+     * Se cuentan aparte de cantidadSociosOmitidos (que es por falta de regla de
+     * cuota) para que el total siga cuadrando: activos = generadas + omitidos +
+     * noLesCorrespondia.
+     */
+    @Field("cantidad_socios_no_les_correspondia")
+    private int cantidadSociosNoLesCorrespondia;
+
     /** Null cuando el origen es AUTOMATICA. */
     @Field("admin_id")
     private String adminId;

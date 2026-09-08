@@ -21,6 +21,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.almoby.ruralcuruzu.constantes.RutasApi;
 import com.almoby.ruralcuruzu.domain.Comprobante;
 import com.almoby.ruralcuruzu.dto.request.AnularCuotaRequest;
+import com.almoby.ruralcuruzu.dto.request.EditarPagoCuotaRequest;
 import com.almoby.ruralcuruzu.dto.request.RegistrarPagoCuotaRequest;
 import com.almoby.ruralcuruzu.dto.request.RevisarPagoInformadoRequest;
 import com.almoby.ruralcuruzu.dto.response.CuotaResponse;
@@ -121,6 +122,21 @@ public class CuotaAdminController {
         return ResponseEntity.ok(cuotaService.listarCuotas(estado, socioId, periodo));
     }
 
+    @Operation(summary = "Listar pagos adelantados",
+            description = "Punto 5 (pedido del dueño del proyecto): cuotas que se generaron antes de que les "
+                    + "tocara por la corrida mensual normal (pago adelantado, ej. el admin le cobró a un socio "
+                    + "varios meses o el año completo por adelantado). Sirve para que el admin pueda ver de un "
+                    + "vistazo quién ya pagó por adelantado y de qué período, sin tener que buscarlo cuota por "
+                    + "cuota.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Listado obtenido correctamente")
+    })
+    @GetMapping("/pagos-adelantados")
+    public ResponseEntity<List<CuotaResumenResponse>> listarPagosAdelantados() {
+        log.info("GET /api/admin/cuotas/pagos-adelantados");
+        return ResponseEntity.ok(cuotaService.listarPagosAdelantados());
+    }
+
     @Operation(summary = "Ver el resumen de cuotas",
             description = "Totales para las tarjetas y pestañas del panel: total cobrado, total en revisión, "
                     + "total cobrado en efectivo, cantidades por estado (todas, pendientes -incluye vencidas y "
@@ -185,6 +201,34 @@ public class CuotaAdminController {
         log.info("POST /api/admin/cuotas/pagos - socioId={} periodos={} admin={}",
                 request.socioId(), request.periodos(), admin.usuario().getEmail());
         return ResponseEntity.ok(cuotaService.registrarPago(request, admin.usuario().getId(), admin.usuario().getNombre()));
+    }
+
+    @Operation(summary = "Editar un pago ya registrado",
+            description = "Corrige un pago cargado manualmente por el admin (pedido del dueño del proyecto: "
+                    + "'en caso de que haya error al registrar pago de una persona y era otra'). Si viene socioId "
+                    + "y es distinto del actual, mueve el pago al socio correcto: la cuota vieja vuelve a quedar "
+                    + "pendiente/vencida y se busca o genera (pago adelantado) la cuota del socio correcto para el "
+                    + "mismo período, que pasa a PAGADA; el importe se recalcula según esa cuota, nunca queda uno "
+                    + "arbitrario. También permite corregir fecha, medio de pago u observación sin cambiar de "
+                    + "socio. Solo aplica a pagos APROBADO registrados por un admin (no a los informados por el "
+                    + "propio socio).")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Pago editado correctamente"),
+            @ApiResponse(responseCode = "400", description = "El pago no está APROBADO, fue informado por el socio, "
+                    + "o el socio correcto no admite un pago en ese período",
+                    content = @Content(schema = @Schema(implementation = ApiErrorResponse.class))),
+            @ApiResponse(responseCode = "404", description = "No existe un pago con ese id, o no existe el socio indicado",
+                    content = @Content(schema = @Schema(implementation = ApiErrorResponse.class)))
+    })
+    @PatchMapping("/pagos/{pagoId}")
+    public ResponseEntity<CuotaResponse> editarPago(
+            @PathVariable String pagoId,
+            @Valid @RequestBody EditarPagoCuotaRequest request,
+            @AuthenticationPrincipal AuthenticatedUser admin) {
+        log.info("PATCH /api/admin/cuotas/pagos/{} - nuevoSocioId={} admin={}",
+                pagoId, request.socioId(), admin.usuario().getEmail());
+        return ResponseEntity.ok(cuotaService.editarPago(
+                pagoId, request, admin.usuario().getId(), admin.usuario().getNombre()));
     }
 
     @Operation(summary = "Aprobar o rechazar un pago informado por el socio",

@@ -146,6 +146,28 @@ class SolicitudSocioServiceImplTest {
     }
 
     @Test
+    void crear_conPersonaFisicaSinCuit_noRompeYGuardaLaSolicitud() {
+        // Punto 6 (pedido del dueño del proyecto): cuit ahora es opcional para
+        // FISICA. Antes de la corrección, extraerDocumentos() llamaba
+        // normalizarDocumento(null) y tiraba NullPointerException acá mismo.
+        SolicitudSocioRequest request = new SolicitudSocioRequest(
+                CategoriaSocio.ACTIVO, TipoPersona.FISICA, "García, Juan Carlos", "28345678",
+                null, LocalDate.of(1985, 4, 12), "Calle 123", "Depto B",
+                "+54 9 3777123456", "juan.garcia@example.com", "Farmacia Central", "Ruta 123 km 4",
+                null, null, true);
+
+        when(usuarioRepository.existsByEmail(anyString())).thenReturn(false);
+        when(solicitudSocioRepository.existsByEmailIgnoreCaseAndEstadoIn(anyString(), any())).thenReturn(false);
+        when(solicitudSocioRepository.existsByDocumentosInAndEstadoIn(any(), any())).thenReturn(false);
+        when(secuenciaService.siguienteValor(SolicitudSocioConstantes.NOMBRE_SECUENCIA_NUMERO_SOLICITUD)).thenReturn(50L);
+
+        SolicitudSocioCreadaResponse response = service.crearSolicitudSocio(request);
+
+        assertThat(response.solicitud().datosPersonaFisica().getCuitCuil()).isNull();
+        verify(solicitudSocioRepository).save(any(SolicitudSocio.class));
+    }
+
+    @Test
     void crear_conDocumentoYaRegistradoEnOtraSolicitud_lanzaExcepcion() {
         SolicitudSocioRequest request = requestFisicaValida();
 

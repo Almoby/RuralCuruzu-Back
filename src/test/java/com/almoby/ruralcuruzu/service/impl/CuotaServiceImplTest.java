@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -52,6 +53,7 @@ import com.almoby.ruralcuruzu.domain.ReglaCuota;
 import com.almoby.ruralcuruzu.domain.Socio;
 import com.almoby.ruralcuruzu.domain.Usuario;
 import com.almoby.ruralcuruzu.dto.request.AnularCuotaRequest;
+import com.almoby.ruralcuruzu.dto.request.EditarPagoCuotaRequest;
 import com.almoby.ruralcuruzu.dto.request.InformarPagoCuotaRequest;
 import com.almoby.ruralcuruzu.dto.request.RegistrarPagoCuotaRequest;
 import com.almoby.ruralcuruzu.dto.request.RevisarPagoInformadoRequest;
@@ -145,6 +147,20 @@ class CuotaServiceImplTest {
                 .tipoPersona(TipoPersona.FISICA)
                 .datosPersonaFisica(datos)
                 .estado(EstadoSocio.ACTIVO)
+                .build();
+    }
+
+    /** Socio que ya no está activo (dado de baja/inactivo), pero sigue existiendo en la base con cuotas viejas. */
+    private Socio socioNoActivo(String id, String numeroSocio, EstadoSocio estado, String email) {
+        DatosPersonaFisica datos = new DatosPersonaFisica(
+                "Lopez, Juan", "12345678", null, null, null, null, null, email, null, null);
+        return Socio.builder()
+                .id(id)
+                .numeroSocio(numeroSocio)
+                .categoria(CategoriaSocio.ACTIVO)
+                .tipoPersona(TipoPersona.FISICA)
+                .datosPersonaFisica(datos)
+                .estado(estado)
                 .build();
     }
 
@@ -247,6 +263,162 @@ class CuotaServiceImplTest {
         assertThat(response.cantidadCuotasGeneradas()).isEqualTo(0);
         verify(cuotaRepository, never()).save(any());
         verify(cuotaRepository, never()).existsBySocioIdAndPeriodo(anyString(), anyString());
+    }
+
+    // ---------- generarCuotas: periodicidad de pago (punto 4) ----------
+
+    private Socio socioConPeriodicidad(String id, String numeroSocio, CategoriaSocio categoria,
+                                        com.almoby.ruralcuruzu.enums.PeriodicidadPago periodicidad) {
+        DatosPersonaFisica datos = new DatosPersonaFisica(
+                "Lopez, Juan", "12345678", null, null, null, null, null, "juan@example.com", null, null);
+        return Socio.builder()
+                .id(id)
+                .numeroSocio(numeroSocio)
+                .categoria(categoria)
+                .tipoPersona(TipoPersona.FISICA)
+                .datosPersonaFisica(datos)
+                .estado(EstadoSocio.ACTIVO)
+                .periodicidadPago(periodicidad)
+                .build();
+    }
+
+    @Test
+    void generarCuotas_socioTrimestral_enMesQueNoLeCorresponde_noGeneraCuota() {
+        Socio socio = socioConPeriodicidad("socio-1", "SOC-000001", CategoriaSocio.ACTIVO,
+                com.almoby.ruralcuruzu.enums.PeriodicidadPago.TRIMESTRAL);
+        when(socioRepository.findByEstado(EstadoSocio.ACTIVO)).thenReturn(List.of(socio));
+        when(cuotaRepository.findByPeriodo(anyString())).thenReturn(List.of());
+        when(ejecucionRepository.save(any(EjecucionGeneracionCuotas.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        // Agosto (mes 8) no es uno de los meses de generación trimestral (1,4,7,10).
+        GeneracionCuotasResponse response = service.generarCuotas("2026-08", null, null);
+
+        assertThat(response.cantidadCuotasGeneradas()).isEqualTo(0);
+        assertThat(response.cantidadSociosOmitidos()).isEqualTo(0);
+        assertThat(response.cantidadSociosNoLesCorrespondia()).isEqualTo(1);
+        verify(cuotaRepository, never()).save(any());
+        // Nota: reglaCuotaRepository.findAll() SÍ se llama siempre (preload D-4,
+        // ver comentario en CuotaServiceImpl.generarCuotas): se buscan las reglas
+        // de una sola vez para todas las categorías antes del loop por socio, así
+        // que no depende de si a este socio en particular le correspondía o no.
+    }
+
+    @Test
+    void generarCuotas_socioTrimestral_enMesDeGeneracion_generaCuotaConImporteMultiplicadoPorTres() {
+        Socio socio = socioConPeriodicidad("socio-1", "SOC-000001", CategoriaSocio.ACTIVO,
+                com.almoby.ruralcuruzu.enums.PeriodicidadPago.TRIMESTRAL);
+        when(socioRepository.findByEstado(EstadoSocio.ACTIVO)).thenReturn(List.of(socio));
+        when(cuotaRepository.findByPeriodo(anyString())).thenReturn(List.of());
+        when(reglaCuotaRepository.findAll())
+                .thenReturn(List.of(reglaCuota(CategoriaSocio.ACTIVO, "Cuota de socio activo", "15000.00", 10)));
+        when(ejecucionRepository.save(any(EjecucionGeneracionCuotas.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        // Julio (mes 7) sí es un mes de generación trimestral.
+        GeneracionCuotasResponse response = service.generarCuotas("2026-07", null, null);
+
+        assertThat(response.cantidadCuotasGeneradas()).isEqualTo(1);
+        assertThat(response.cantidadSociosNoLesCorrespondia()).isEqualTo(0);
+        ArgumentCaptor<Cuota> cuotaCaptor = ArgumentCaptor.forClass(Cuota.class);
+        verify(cuotaRepository).save(cuotaCaptor.capture());
+        assertThat(cuotaCaptor.getValue().getImporte()).isEqualByComparingTo("45000.00");
+    }
+
+    @Test
+    void generarCuotas_socioAnual_soloGeneraEnEnero_conImporteMultiplicadoPorDoce() {
+        Socio socio = socioConPeriodicidad("socio-1", "SOC-000001", CategoriaSocio.ACTIVO,
+                com.almoby.ruralcuruzu.enums.PeriodicidadPago.ANUAL);
+        when(socioRepository.findByEstado(EstadoSocio.ACTIVO)).thenReturn(List.of(socio));
+        when(cuotaRepository.findByPeriodo(anyString())).thenReturn(List.of());
+        when(reglaCuotaRepository.findAll())
+                .thenReturn(List.of(reglaCuota(CategoriaSocio.ACTIVO, "Cuota de socio activo", "15000.00", 10)));
+        when(ejecucionRepository.save(any(EjecucionGeneracionCuotas.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        GeneracionCuotasResponse respuestaEnero = service.generarCuotas("2026-01", null, null);
+        assertThat(respuestaEnero.cantidadCuotasGeneradas()).isEqualTo(1);
+        ArgumentCaptor<Cuota> cuotaCaptor = ArgumentCaptor.forClass(Cuota.class);
+        verify(cuotaRepository).save(cuotaCaptor.capture());
+        assertThat(cuotaCaptor.getValue().getImporte()).isEqualByComparingTo("180000.00");
+    }
+
+    @Test
+    void generarCuotas_socioConPeriodicidadNullEnMongo_seComportaComoMensual() {
+        // Simula un Socio que ya existía en la base antes de agregar este campo:
+        // periodicidadPago queda null (el @Builder.Default de Socio solo aplica a
+        // objetos nuevos armados con el builder, ver Socio.periodicidadEfectiva()).
+        Socio socio = socioConPeriodicidad("socio-1", "SOC-000001", CategoriaSocio.ACTIVO, null);
+        when(socioRepository.findByEstado(EstadoSocio.ACTIVO)).thenReturn(List.of(socio));
+        when(cuotaRepository.findByPeriodo(anyString())).thenReturn(List.of());
+        when(reglaCuotaRepository.findAll())
+                .thenReturn(List.of(reglaCuota(CategoriaSocio.ACTIVO, "Cuota de socio activo", "15000.00", 10)));
+        when(ejecucionRepository.save(any(EjecucionGeneracionCuotas.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        GeneracionCuotasResponse response = service.generarCuotas("2026-08", null, null);
+
+        assertThat(response.cantidadCuotasGeneradas()).isEqualTo(1);
+        assertThat(response.cantidadSociosNoLesCorrespondia()).isEqualTo(0);
+        ArgumentCaptor<Cuota> cuotaCaptor = ArgumentCaptor.forClass(Cuota.class);
+        verify(cuotaRepository).save(cuotaCaptor.capture());
+        assertThat(cuotaCaptor.getValue().getImporte()).isEqualByComparingTo("15000.00");
+    }
+
+    @Test
+    void generarCuotas_socioMensual_noSeVeAfectadoPorElCambio_generaTodosLosMeses() {
+        // Regresión: la periodicidad por defecto (MENSUAL, incluye el caso de un
+        // Socio ya existente en Mongo sin este campo, ver Socio.periodicidadEfectiva)
+        // no debe cambiar el comportamiento histórico.
+        Socio socio = socioActivo("socio-1", "SOC-000001", CategoriaSocio.ACTIVO);
+        when(socioRepository.findByEstado(EstadoSocio.ACTIVO)).thenReturn(List.of(socio));
+        when(cuotaRepository.findByPeriodo(anyString())).thenReturn(List.of());
+        when(reglaCuotaRepository.findAll())
+                .thenReturn(List.of(reglaCuota(CategoriaSocio.ACTIVO, "Cuota de socio activo", "15000.00", 10)));
+        when(ejecucionRepository.save(any(EjecucionGeneracionCuotas.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        GeneracionCuotasResponse response = service.generarCuotas("2026-08", null, null);
+
+        assertThat(response.cantidadCuotasGeneradas()).isEqualTo(1);
+        assertThat(response.cantidadSociosNoLesCorrespondia()).isEqualTo(0);
+        ArgumentCaptor<Cuota> cuotaCaptor = ArgumentCaptor.forClass(Cuota.class);
+        verify(cuotaRepository).save(cuotaCaptor.capture());
+        assertThat(cuotaCaptor.getValue().getImporte()).isEqualByComparingTo("15000.00");
+    }
+
+    // ---------- listarPagosAdelantados (punto 5) ----------
+
+    @Test
+    void listarPagosAdelantados_cuotaGeneradaAntesDeSuMes_apareceEnElListado() {
+        Cuota adelantada = cuotaPendiente("cuota-1", "socio-1", "2026-09");
+        adelantada.setFechaGeneracion(Instant.parse("2026-07-05T10:00:00Z")); // generada en julio para septiembre
+        when(cuotaRepository.findAll()).thenReturn(List.of(adelantada));
+        when(pagoRepository.findByCuotaIdIn(anyList())).thenReturn(List.of());
+
+        List<CuotaResumenResponse> resultado = service.listarPagosAdelantados();
+
+        assertThat(resultado).hasSize(1);
+        assertThat(resultado.get(0).id()).isEqualTo("cuota-1");
+        assertThat(resultado.get(0).periodo()).isEqualTo("2026-09");
+    }
+
+    @Test
+    void listarPagosAdelantados_cuotaGeneradaEnSuPropioMes_noApareceEnElListado() {
+        Cuota normal = cuotaPendiente("cuota-1", "socio-1", "2026-07");
+        normal.setFechaGeneracion(Instant.parse("2026-07-01T06:00:00Z")); // generada por el cron del 1º de julio
+        when(cuotaRepository.findAll()).thenReturn(List.of(normal));
+
+        List<CuotaResumenResponse> resultado = service.listarPagosAdelantados();
+
+        assertThat(resultado).isEmpty();
+        verify(pagoRepository, never()).findByCuotaIdIn(anyList());
+    }
+
+    @Test
+    void listarPagosAdelantados_sinFechaDeGeneracion_noRompeYNoLaCuentaComoAdelantada() {
+        Cuota sinFecha = cuotaPendiente("cuota-1", "socio-1", "2026-07");
+        sinFecha.setFechaGeneracion(null);
+        when(cuotaRepository.findAll()).thenReturn(List.of(sinFecha));
+
+        List<CuotaResumenResponse> resultado = service.listarPagosAdelantados();
+
+        assertThat(resultado).isEmpty();
     }
 
     // ---------- listarEjecuciones ----------
@@ -567,6 +739,182 @@ class CuotaServiceImplTest {
                 .isInstanceOf(CuotaNoEncontradaException.class);
         verify(cuotaRepository, never()).save(any(Cuota.class));
         verify(reglaCuotaRepository, never()).findByCategoriaAplicable(any());
+    }
+
+    // ---------- editarPago ----------
+
+    @Test
+    void editarPago_cambiaSocio_muevePagoYRevierteLaCuotaViejaAPendiente() {
+        Cuota cuotaVieja = cuotaPendiente("cuota-1", "socio-1");
+        cuotaVieja.setEstado(EstadoCuota.PAGADA);
+        cuotaVieja.setFechaVencimiento(LocalDate.now().plusDays(5)); // todavía no vencida -> vuelve a PENDIENTE
+
+        Pago pago = Pago.builder()
+                .id("pago-1").cuotaId("cuota-1").socioId("socio-1")
+                .importe(new BigDecimal("15000.00")).medioPago(MedioPago.EFECTIVO)
+                .estado(EstadoPago.APROBADO).informadoPorSocio(false)
+                .build();
+
+        Socio socioCorrecto = socioActivo("socio-2", "SOC-000002", CategoriaSocio.ACTIVO, "correcto@example.com");
+        Cuota cuotaCorrecta = cuotaPendiente("cuota-2", "socio-2");
+
+        when(pagoRepository.findById("pago-1")).thenReturn(Optional.of(pago));
+        when(cuotaRepository.findById("cuota-1")).thenReturn(Optional.of(cuotaVieja));
+        when(socioRepository.findById("socio-2")).thenReturn(Optional.of(socioCorrecto));
+        when(cuotaRepository.findBySocioIdAndPeriodo("socio-2", "2026-07")).thenReturn(Optional.of(cuotaCorrecta));
+        when(cuotaRepository.findBySocioId("socio-2")).thenReturn(List.of(cuotaCorrecta));
+
+        CuotaResponse response = service.editarPago(
+                "pago-1", new EditarPagoCuotaRequest("socio-2", null, null, null), "admin-1", "Admin Uno");
+
+        assertThat(cuotaVieja.getEstado()).isEqualTo(EstadoCuota.PENDIENTE);
+        assertThat(cuotaCorrecta.getEstado()).isEqualTo(EstadoCuota.PAGADA);
+        assertThat(pago.getSocioId()).isEqualTo("socio-2");
+        assertThat(pago.getCuotaId()).isEqualTo("cuota-2");
+        assertThat(pago.getImporte()).isEqualByComparingTo("15000.00");
+        assertThat(response.id()).isEqualTo("cuota-2");
+
+        verify(cuotaRepository).save(cuotaVieja);
+        verify(cuotaRepository).save(cuotaCorrecta);
+        verify(pagoRepository).save(pago);
+        verify(emailService).enviarCorreoPagoRegistrado(eq("correcto@example.com"), anyString(), eq("2026-07"), any());
+    }
+
+    @Test
+    void editarPago_cambiaSocio_conCuotaViejaYaVencida_laDejaVencidaEnVezDePendiente() {
+        Cuota cuotaVieja = cuotaPendiente("cuota-1", "socio-1");
+        cuotaVieja.setEstado(EstadoCuota.PAGADA);
+        cuotaVieja.setFechaVencimiento(LocalDate.now().minusDays(5)); // ya venció -> vuelve a VENCIDA, no PENDIENTE
+
+        Pago pago = Pago.builder()
+                .id("pago-1").cuotaId("cuota-1").socioId("socio-1")
+                .importe(new BigDecimal("15000.00")).medioPago(MedioPago.EFECTIVO)
+                .estado(EstadoPago.APROBADO).informadoPorSocio(false)
+                .build();
+
+        Socio socioCorrecto = socioActivo("socio-2", "SOC-000002", CategoriaSocio.ACTIVO, "correcto@example.com");
+        Cuota cuotaCorrecta = cuotaPendiente("cuota-2", "socio-2");
+
+        when(pagoRepository.findById("pago-1")).thenReturn(Optional.of(pago));
+        when(cuotaRepository.findById("cuota-1")).thenReturn(Optional.of(cuotaVieja));
+        when(socioRepository.findById("socio-2")).thenReturn(Optional.of(socioCorrecto));
+        when(cuotaRepository.findBySocioIdAndPeriodo("socio-2", "2026-07")).thenReturn(Optional.of(cuotaCorrecta));
+        when(cuotaRepository.findBySocioId("socio-2")).thenReturn(List.of(cuotaCorrecta));
+
+        service.editarPago("pago-1", new EditarPagoCuotaRequest("socio-2", null, null, null), "admin-1", "Admin Uno");
+
+        assertThat(cuotaVieja.getEstado()).isEqualTo(EstadoCuota.VENCIDA);
+    }
+
+    @Test
+    void editarPago_soloCorrigeFechaMedioYObservacion_sinCambiarDeSocio() {
+        Cuota cuota = cuotaPendiente("cuota-1", "socio-1");
+        cuota.setEstado(EstadoCuota.PAGADA);
+        Pago pago = Pago.builder()
+                .id("pago-1").cuotaId("cuota-1").socioId("socio-1")
+                .importe(new BigDecimal("15000.00")).medioPago(MedioPago.TRANSFERENCIA)
+                .estado(EstadoPago.APROBADO).informadoPorSocio(false).observacion("obs original")
+                .build();
+
+        when(pagoRepository.findById("pago-1")).thenReturn(Optional.of(pago));
+        when(cuotaRepository.findById("cuota-1")).thenReturn(Optional.of(cuota));
+
+        service.editarPago("pago-1",
+                new EditarPagoCuotaRequest(null, LocalDate.of(2026, 7, 6), MedioPago.EFECTIVO, "corregido"),
+                "admin-1", "Admin Uno");
+
+        assertThat(pago.getMedioPago()).isEqualTo(MedioPago.EFECTIVO);
+        assertThat(pago.getObservacion()).isEqualTo("corregido");
+        assertThat(pago.getSocioId()).isEqualTo("socio-1");
+        verify(cuotaRepository, never()).save(any(Cuota.class));
+        verify(socioRepository, never()).findById(anyString());
+        verify(emailService, never()).enviarCorreoPagoRegistrado(anyString(), anyString(), anyString(), any());
+    }
+
+    @Test
+    void editarPago_pagoInformadoPorSocio_lanzaExcepcion() {
+        Pago pago = Pago.builder()
+                .id("pago-1").cuotaId("cuota-1").socioId("socio-1")
+                .estado(EstadoPago.APROBADO).informadoPorSocio(true)
+                .build();
+        when(pagoRepository.findById("pago-1")).thenReturn(Optional.of(pago));
+
+        assertThatThrownBy(() -> service.editarPago(
+                "pago-1", new EditarPagoCuotaRequest(null, null, null, "x"), "admin-1", "Admin Uno"))
+                .isInstanceOf(CuotaEstadoInvalidoException.class);
+    }
+
+    @Test
+    void editarPago_pagoNoAprobado_lanzaExcepcion() {
+        Pago pago = Pago.builder()
+                .id("pago-1").cuotaId("cuota-1").socioId("socio-1")
+                .estado(EstadoPago.RECHAZADO).informadoPorSocio(false)
+                .build();
+        when(pagoRepository.findById("pago-1")).thenReturn(Optional.of(pago));
+
+        assertThatThrownBy(() -> service.editarPago(
+                "pago-1", new EditarPagoCuotaRequest(null, null, null, "x"), "admin-1", "Admin Uno"))
+                .isInstanceOf(CuotaEstadoInvalidoException.class);
+    }
+
+    @Test
+    void editarPago_pagoInexistente_lanzaExcepcion() {
+        when(pagoRepository.findById("no-existe")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.editarPago(
+                "no-existe", new EditarPagoCuotaRequest(null, null, null, null), "admin-1", "Admin Uno"))
+                .isInstanceOf(PagoNoEncontradoException.class);
+    }
+
+    @Test
+    void editarPago_cuotaDelSocioCorrectoYaPagada_lanzaExcepcionYNoRevierteLaCuotaVieja() {
+        // Regresión: si la cuota del socio correcto no admite el pago (ya está
+        // PAGADA), no hay que dejar la cuota vieja ya revertida a
+        // PENDIENTE con el Pago aprobado todavía apuntándole (estado a medio camino).
+        Cuota cuotaVieja = cuotaPendiente("cuota-1", "socio-1");
+        cuotaVieja.setEstado(EstadoCuota.PAGADA);
+        cuotaVieja.setFechaVencimiento(LocalDate.now().plusDays(5));
+
+        Pago pago = Pago.builder()
+                .id("pago-1").cuotaId("cuota-1").socioId("socio-1")
+                .importe(new BigDecimal("15000.00")).medioPago(MedioPago.EFECTIVO)
+                .estado(EstadoPago.APROBADO).informadoPorSocio(false)
+                .build();
+
+        Socio socioCorrecto = socioActivo("socio-2", "SOC-000002", CategoriaSocio.ACTIVO, "correcto@example.com");
+        Cuota cuotaCorrectaYaPagada = cuotaPendiente("cuota-2", "socio-2");
+        cuotaCorrectaYaPagada.setEstado(EstadoCuota.PAGADA);
+
+        when(pagoRepository.findById("pago-1")).thenReturn(Optional.of(pago));
+        when(cuotaRepository.findById("cuota-1")).thenReturn(Optional.of(cuotaVieja));
+        when(socioRepository.findById("socio-2")).thenReturn(Optional.of(socioCorrecto));
+        when(cuotaRepository.findBySocioIdAndPeriodo("socio-2", "2026-07")).thenReturn(Optional.of(cuotaCorrectaYaPagada));
+
+        assertThatThrownBy(() -> service.editarPago(
+                "pago-1", new EditarPagoCuotaRequest("socio-2", null, null, null), "admin-1", "Admin Uno"))
+                .isInstanceOf(CuotaEstadoInvalidoException.class);
+
+        assertThat(cuotaVieja.getEstado()).isEqualTo(EstadoCuota.PAGADA);
+        verify(cuotaRepository, never()).save(any(Cuota.class));
+        verify(pagoRepository, never()).save(any(Pago.class));
+    }
+
+    @Test
+    void editarPago_socioCorrectoInexistente_lanzaExcepcion() {
+        Cuota cuota = cuotaPendiente("cuota-1", "socio-1");
+        Pago pago = Pago.builder()
+                .id("pago-1").cuotaId("cuota-1").socioId("socio-1")
+                .importe(new BigDecimal("15000.00")).medioPago(MedioPago.EFECTIVO)
+                .estado(EstadoPago.APROBADO).informadoPorSocio(false)
+                .build();
+        when(pagoRepository.findById("pago-1")).thenReturn(Optional.of(pago));
+        when(cuotaRepository.findById("cuota-1")).thenReturn(Optional.of(cuota));
+        when(socioRepository.findById("no-existe")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.editarPago(
+                "pago-1", new EditarPagoCuotaRequest("no-existe", null, null, null), "admin-1", "Admin Uno"))
+                .isInstanceOf(SocioNoEncontradoException.class);
+        verify(cuotaRepository, never()).save(any(Cuota.class));
     }
 
     // ---------- informarPago ----------
@@ -1269,6 +1617,43 @@ class CuotaServiceImplTest {
         // D-6: un único findAllById para ambas cuotas vencidas del mismo día.
         verify(socioRepository, times(1)).findAllById(anyList());
         verify(socioRepository, never()).findById(anyString());
+    }
+
+    @Test
+    void enviarRecordatorioPorDiasRestantes_socioDadoDeBaja_noEnviaElMail() {
+        Socio socio = socioNoActivo("socio-1", "SOC-000001", EstadoSocio.DADO_DE_BAJA, "juan@example.com");
+        when(socioRepository.findAllById(anyList())).thenReturn(List.of(socio));
+
+        Cuota aUnDia = cuotaPendiente("cuota-1", "socio-1");
+        LocalDate hoyFecha = LocalDate.now();
+        when(cuotaRepository.findByEstadoAndFechaVencimiento(eq(EstadoCuota.PENDIENTE), any(LocalDate.class)))
+                .thenReturn(List.of());
+        when(cuotaRepository.findByEstadoAndFechaVencimiento(EstadoCuota.PENDIENTE, hoyFecha.plusDays(1)))
+                .thenReturn(List.of(aUnDia));
+        when(cuotaRepository.findByEstado(EstadoCuota.VENCIDA)).thenReturn(List.of());
+
+        service.enviarRecordatoriosDeCuotas();
+
+        verify(emailService, never()).enviarCorreoCuotaProximaAVencer(
+                anyString(), anyString(), anyString(), any(), any(), anyInt());
+    }
+
+    @Test
+    void enviarAvisosDeDeuda_socioInactivo_noEnviaElMail() {
+        Socio socio = socioNoActivo("socio-1", "SOC-000001", EstadoSocio.INACTIVO, "juan@example.com");
+        when(socioRepository.findAllById(anyList())).thenReturn(List.of(socio));
+        when(cuotaRepository.findByEstadoAndFechaVencimiento(eq(EstadoCuota.PENDIENTE), any(LocalDate.class)))
+                .thenReturn(List.of());
+
+        Cuota vencidaAyer = cuotaPendiente("cuota-1", "socio-1");
+        vencidaAyer.setEstado(EstadoCuota.VENCIDA);
+        vencidaAyer.setFechaVencimiento(LocalDate.now().minusDays(1));
+        when(cuotaRepository.findByEstado(EstadoCuota.VENCIDA)).thenReturn(List.of(vencidaAyer));
+
+        service.enviarRecordatoriosDeCuotas();
+
+        verify(emailService, never()).enviarCorreoCuotaVencida(
+                anyString(), anyString(), anyString(), any(), any());
     }
 
     // ---------- resumen ----------

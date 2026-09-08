@@ -14,6 +14,7 @@ public record GeneracionCuotasResponse(
         int cantidadSociosActivos,
         int cantidadCuotasGeneradas,
         int cantidadSociosOmitidos,
+        int cantidadSociosNoLesCorrespondia,
         Instant fechaEjecucion
 
 ) {
@@ -26,6 +27,7 @@ public record GeneracionCuotasResponse(
                 ejecucion.getCantidadSociosActivos(),
                 ejecucion.getCantidadCuotasGeneradas(),
                 ejecucion.getCantidadSociosOmitidos(),
+                ejecucion.getCantidadSociosNoLesCorrespondia(),
                 ejecucion.getFechaEjecucion());
     }
 }

@@ -23,4 +23,13 @@ public interface DatosPersonaRequestValidable {
     String nombreResponsable();
 
     String dniResponsable();
+
+    /**
+     * A diferencia de documento/fechaNacimiento/nombreResponsable/dniResponsable
+     * (exclusivos de un tipo de persona), cuit puede venir en los dos casos: es
+     * obligatorio para JURIDICA (no tiene otro documento identificatorio) pero
+     * opcional para FISICA (pedido del dueño del proyecto: hay socios/solicitantes
+     * que solo tienen DNI, sin CUIT/CUIL registrado).
+     */
+    String cuit();
 }

@@ -9,6 +9,7 @@ import org.springframework.data.mongodb.core.mapping.Field;
 
 import com.almoby.ruralcuruzu.enums.CategoriaSocio;
 import com.almoby.ruralcuruzu.enums.EstadoSocio;
+import com.almoby.ruralcuruzu.enums.PeriodicidadPago;
 import com.almoby.ruralcuruzu.enums.TipoPersona;
 
 import lombok.AllArgsConstructor;
@@ -16,6 +17,8 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+
+
 
 /**
  * Perfil de un Socio ya aprobado (documento, sección 8.4). Se crea al aprobar
@@ -41,6 +44,16 @@ public class Socio {
 
     @Field("categoria")
     private CategoriaSocio categoria;
+
+    /**
+     * Con qué frecuencia paga este socio (pedido del dueño del proyecto: no
+     * todos pagan mes a mes). MENSUAL por defecto: es el comportamiento de
+     * siempre, así que los socios ya existentes (sin este dato en Mongo)
+     * quedan como MENSUAL al deserializarse (ver @Builder.Default).
+     */
+    @Field("periodicidad_pago")
+    @Builder.Default
+    private PeriodicidadPago periodicidadPago = PeriodicidadPago.MENSUAL;
 
     @Field("tipo_persona")
     private TipoPersona tipoPersona;
@@ -88,6 +101,17 @@ public class Socio {
 
     public boolean estaActivo() {
         return estado == EstadoSocio.ACTIVO;
+    }
+
+    /**
+     * Periodicidad real a usar, tolerante a los socios que ya existían en
+     * Mongo antes de este campo (quedan con periodicidadPago = null al
+     * deserializarse, el @Builder.Default de arriba no los alcanza: solo
+     * aplica a objetos nuevos construidos con el builder). Se trata a un null
+     * como MENSUAL, el comportamiento de siempre.
+     */
+    public PeriodicidadPago periodicidadEfectiva() {
+        return periodicidadPago != null ? periodicidadPago : PeriodicidadPago.MENSUAL;
     }
 
     /** Correo de contacto según el tipo de persona. */

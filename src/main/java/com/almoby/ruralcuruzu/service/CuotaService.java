@@ -5,6 +5,7 @@ import java.util.List;
 import org.springframework.web.multipart.MultipartFile;
 
 import com.almoby.ruralcuruzu.dto.request.AnularCuotaRequest;
+import com.almoby.ruralcuruzu.dto.request.EditarPagoCuotaRequest;
 import com.almoby.ruralcuruzu.dto.request.InformarPagoCuotaRequest;
 import com.almoby.ruralcuruzu.dto.request.RegistrarPagoCuotaRequest;
 import com.almoby.ruralcuruzu.dto.request.RevisarPagoInformadoRequest;
@@ -35,10 +36,28 @@ public interface CuotaService {
 
     List<CuotaResumenResponse> listarCuotas(EstadoCuota estado, String socioId, String periodo);
 
+    /**
+     * Punto 5 (pedido del dueño del proyecto): cuotas que se generaron "al
+     * vuelo" antes de que les tocara por la generación mensual normal (pago
+     * adelantado, ver CuotaServiceImpl.generarCuotaParaPagoAdelantado), para
+     * que el admin pueda ver de un solo vistazo quién pagó por adelantado y
+     * de qué período. Se identifican comparando el mes de fechaGeneracion
+     * contra el mes de periodo: si la cuota se generó ANTES del mes que
+     * cubre, fue un adelanto.
+     */
+    List<CuotaResumenResponse> listarPagosAdelantados();
+
     CuotaResponse obtenerCuotaPorId(String id);
 
     /** Registro manual de un pago hecho por el admin (documento 10.4). */
     RegistrarPagoResponse registrarPago(RegistrarPagoCuotaRequest request, String adminId, String adminNombre);
+
+    /**
+     * Corrige un pago ya registrado manualmente (ej. se cargó a nombre del
+     * socio equivocado). Ver EditarPagoCuotaRequest para el detalle de qué
+     * pasa con la cuota vieja y la nueva cuando cambia el socio.
+     */
+    CuotaResponse editarPago(String pagoId, EditarPagoCuotaRequest request, String adminId, String adminNombre);
 
     /**
      * El socio informa (autoservicio) que pagó una cuota propia por

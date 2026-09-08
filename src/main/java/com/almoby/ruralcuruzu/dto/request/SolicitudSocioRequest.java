@@ -52,8 +52,10 @@ public record SolicitudSocioRequest(
         @Dni
         String documento,
 
-        @Schema(description = "CUIT/CUIL, para ambos tipos de persona", example = "20-28345678-9")
-        @NotBlank(message = "El CUIT/CUIL es obligatorio")
+        @Schema(description = "CUIT/CUIL. Opcional si tipoPersona es FISICA (pedido del dueño del proyecto: hay "
+                + "solicitantes que solo tienen DNI, no CUIT/CUIL); obligatorio si es JURIDICA, porque ahí no hay "
+                + "un documento alternativo que identifique a la empresa (ver DatosSolicitudValidosValidator)",
+                example = "20-28345678-9")
         @CuitCuil
         String cuit,
 
