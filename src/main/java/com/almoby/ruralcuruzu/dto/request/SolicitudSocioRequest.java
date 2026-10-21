@@ -91,7 +91,8 @@ public record SolicitudSocioRequest(
         @Schema(description = "Solo si tipoPersona es JURIDICA: nombre de la persona responsable", example = "María Fernández")
         String nombreResponsable,
 
-        @Schema(description = "Solo si tipoPersona es JURIDICA: DNI de la persona responsable", example = "30.123.456")
+        @Schema(description = "Solo si tipoPersona es JURIDICA: DNI de la persona responsable (opcional)",
+                example = "30.123.456")
         @Dni
         String dniResponsable,
 

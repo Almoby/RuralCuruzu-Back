@@ -66,6 +66,13 @@ class DatosSolicitudValidosValidatorTest {
     }
 
     @Test
+    void personaJuridica_sinDniDelResponsable_esValida() {
+        Datos datos = new Datos(TipoPersona.JURIDICA, null, null, "María Fernández", null, "30-71553511-0");
+
+        assertThat(validator.isValid(datos, contextoFalso())).isTrue();
+    }
+
+    @Test
     void tipoPersonaNulo_esValida_loReportaElNotNullDeTipoPersona() {
         Datos datos = new Datos(null, null, null, null, null, null);
 
