@@ -243,6 +243,41 @@ class SocioServiceImplTest {
     }
 
     @Test
+    void crearSocioManual_siFallaLaCreacionDelUsuario_borraElSocioHuerfanoParaPoderReintentar() {
+        AltaManualSocioRequest request = altaManualFisica("juan.garcia@example.com", null);
+
+        when(secuenciaService.siguienteValor(anyString())).thenReturn(7L);
+        doAnswerAsignarIdSocio();
+        when(cuentaAccesoService.crearCuentaConPasswordTemporal(anyString(), anyString(), any(Rol.class), anyString()))
+                .thenThrow(new org.springframework.dao.DuplicateKeyException("email duplicado"));
+        when(usuarioRepository.existsByEmail("juan.garcia@example.com")).thenReturn(false, true);
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                () -> service.crearSocioManual(request, "admin-1", "Admin Uno"))
+                .isInstanceOf(com.almoby.ruralcuruzu.exception.EmailYaRegistradoException.class);
+
+        verify(socioRepository).deleteById(anyString());
+    }
+
+    @Test
+    void crearSocioManual_siFallaElMailDeCredenciales_elSocioQuedaCreadoYNoSeLanzaError() {
+        AltaManualSocioRequest request = altaManualFisica("juan.garcia@example.com", null);
+
+        when(usuarioRepository.existsByEmail(anyString())).thenReturn(false);
+        when(secuenciaService.siguienteValor(anyString())).thenReturn(7L);
+        when(cuentaAccesoService.crearCuentaConPasswordTemporal(anyString(), anyString(), any(Rol.class), anyString()))
+                .thenReturn(cuentaFalsa("juan.garcia@example.com"));
+        doAnswerAsignarIdSocio();
+        org.mockito.Mockito.doThrow(new IllegalStateException("SMTP caído"))
+                .when(emailService).enviarCorreoCredencialesSocio(anyString(), anyString(), anyString(), anyString());
+
+        SocioCreadoResponse response = service.crearSocioManual(request, "admin-1", "Admin Uno");
+
+        assertThat(response.socio().numeroSocio()).isEqualTo("SOC-000007");
+        assertThat(response.mensaje()).contains("no se pudo enviar el correo");
+    }
+
+    @Test
     void crearSocioManual_conEstadoExplicito_respetaElEstadoElegido() {
         AltaManualSocioRequest request = altaManualFisica("juan.garcia@example.com", EstadoSocio.INACTIVO);
 

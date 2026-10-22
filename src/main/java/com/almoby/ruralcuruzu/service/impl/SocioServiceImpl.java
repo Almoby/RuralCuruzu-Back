@@ -3,6 +3,7 @@ package com.almoby.ruralcuruzu.service.impl;
 import java.time.Instant;
 import java.util.List;
 
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 
 import com.almoby.ruralcuruzu.constantes.SocioConstantes;
@@ -10,6 +11,7 @@ import com.almoby.ruralcuruzu.domain.DatosPersonaFisica;
 import com.almoby.ruralcuruzu.domain.DatosPersonaJuridica;
 import com.almoby.ruralcuruzu.domain.Socio;
 import com.almoby.ruralcuruzu.domain.SolicitudSocio;
+import com.almoby.ruralcuruzu.domain.Usuario;
 import com.almoby.ruralcuruzu.dto.request.ActualizarSocioParcialRequest;
 import com.almoby.ruralcuruzu.dto.request.AltaManualSocioRequest;
 import com.almoby.ruralcuruzu.dto.request.CambiarEstadoSocioRequest;
@@ -114,12 +116,7 @@ public class SocioServiceImpl implements SocioService {
         // del Socio (refId) y Mongo recién lo asigna al persistir.
         socioRepository.save(socio);
 
-        CuentaAccesoService.CuentaTemporalCreada cuenta = cuentaAccesoService.crearCuentaConPasswordTemporal(
-                solicitud.getEmail(), socio.nombreParaMostrar(), Rol.SOCIO, socio.getId());
-
-        // Ahora que el Usuario ya tiene id, se completa la referencia inversa.
-        socio.setUsuarioId(cuenta.usuario().getId());
-        socioRepository.save(socio);
+        CuentaAccesoService.CuentaTemporalCreada cuenta = crearCuentaORevertirAlta(socio, solicitud.getEmail());
 
         log.info("Socio creado numeroSocio={} desde solicitud={} (admin={})",
                 numeroSocio, solicitud.getNumeroSolicitud(), adminNombre);
@@ -128,6 +125,49 @@ public class SocioServiceImpl implements SocioService {
                 cuenta.usuario().getEmail(), socio.nombreParaMostrar(), numeroSocio, cuenta.passwordTemporal());
 
         return socio;
+    }
+
+    /**
+     * Crea el Usuario del socio y completa la referencia inversa (socio.usuarioId).
+     * Mongo no tiene transacción acá: si algo falla a mitad de camino (ej. dos
+     * envíos simultáneos del mismo formulario, donde el segundo choca con el
+     * índice único del email), se borra lo que ya se había guardado, para no
+     * dejar un Socio "huérfano" (sin usuario) ni un Usuario sin socio, que
+     * bloquearían el reintento con "el email ya fue utilizado" sin que el socio
+     * aparezca en el listado.
+     */
+    private CuentaAccesoService.CuentaTemporalCreada crearCuentaORevertirAlta(Socio socio, String email) {
+        Usuario usuarioCreado = null;
+        try {
+            CuentaAccesoService.CuentaTemporalCreada cuenta = cuentaAccesoService.crearCuentaConPasswordTemporal(
+                    email, socio.nombreParaMostrar(), Rol.SOCIO, socio.getId());
+            usuarioCreado = cuenta.usuario();
+
+            // Ahora que el Usuario ya tiene id, se completa la referencia inversa.
+            socio.setUsuarioId(usuarioCreado.getId());
+            socioRepository.save(socio);
+            return cuenta;
+        } catch (RuntimeException ex) {
+            log.error("Falló el alta del socio numeroSocio={}: se revierte lo guardado", socio.getNumeroSocio(), ex);
+            revertirAltaParcial(socio, usuarioCreado);
+            if (ex instanceof DuplicateKeyException && usuarioRepository.existsByEmail(email)) {
+                throw new EmailYaRegistradoException();
+            }
+            throw ex;
+        }
+    }
+
+    private void revertirAltaParcial(Socio socio, Usuario usuarioCreado) {
+        try {
+            if (usuarioCreado != null && usuarioCreado.getId() != null) {
+                usuarioRepository.deleteById(usuarioCreado.getId());
+            }
+            if (socio.getId() != null) {
+                socioRepository.deleteById(socio.getId());
+            }
+        } catch (RuntimeException ex) {
+            log.error("No se pudo revertir el alta parcial del socio numeroSocio={}", socio.getNumeroSocio(), ex);
+        }
     }
 
     @Override
@@ -159,17 +199,20 @@ public class SocioServiceImpl implements SocioService {
         // del Socio (refId) y Mongo recién lo asigna al persistir.
         socioRepository.save(socio);
 
-        CuentaAccesoService.CuentaTemporalCreada cuenta = cuentaAccesoService.crearCuentaConPasswordTemporal(
-                email, socio.nombreParaMostrar(), Rol.SOCIO, socio.getId());
-
-        // Ahora que el Usuario ya tiene id, se completa la referencia inversa.
-        socio.setUsuarioId(cuenta.usuario().getId());
-        socioRepository.save(socio);
+        CuentaAccesoService.CuentaTemporalCreada cuenta = crearCuentaORevertirAlta(socio, email);
 
         log.info("Socio creado manualmente numeroSocio={} (admin={})", numeroSocio, adminNombre);
 
-        emailService.enviarCorreoCredencialesSocio(
-                cuenta.usuario().getEmail(), socio.nombreParaMostrar(), numeroSocio, cuenta.passwordTemporal());
+        // El socio y su Usuario ya están guardados (Mongo, sin transacción): si el
+        // mail falla NO se puede devolver un error, porque el admin reintentaría y
+        // chocaría con "email ya registrado" sin ver el socio recién creado.
+        try {
+            emailService.enviarCorreoCredencialesSocio(
+                    cuenta.usuario().getEmail(), socio.nombreParaMostrar(), numeroSocio, cuenta.passwordTemporal());
+        } catch (RuntimeException ex) {
+            log.error("Socio numeroSocio={} creado, pero falló el envío de credenciales a {}", numeroSocio, email, ex);
+            return SocioCreadoResponse.ofSinCorreo(SocioResponse.from(socio));
+        }
 
         return SocioCreadoResponse.of(SocioResponse.from(socio));
     }

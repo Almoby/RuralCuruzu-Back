@@ -19,4 +19,10 @@ public record SocioCreadoResponse(
     public static SocioCreadoResponse of(SocioResponse socio) {
         return new SocioCreadoResponse("Socio dado de alta con éxito", socio);
     }
+
+    /** El socio SÍ quedó creado, pero el mail con sus credenciales no pudo enviarse. */
+    public static SocioCreadoResponse ofSinCorreo(SocioResponse socio) {
+        return new SocioCreadoResponse("Socio dado de alta, pero no se pudo enviar el correo con sus "
+                + "credenciales de acceso. Revisá la configuración de correo", socio);
+    }
 }
